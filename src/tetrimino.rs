@@ -14,6 +14,14 @@ impl Tetrimino {
     pub fn new(shape: Shape, orientation: Orientation) -> Self {
         Self { shape, orientation }
     }
+
+    pub fn cells(&self) -> [[u8; 4]; 4] {
+        self.shape.cells(self.orientation)
+    }
+
+    pub fn color(&self) -> Color {
+        self.shape.color()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -28,18 +36,18 @@ pub enum Shape {
     L,
 }
 
-#[repr(usize)]
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Orientation {
     #[default]
-    Up = 0,
-    Right = 1,
-    Down = 2,
-    Left = 3,
+    Up,
+    Left,
+    Down,
+    Right,
 }
 
 impl Shape {
-    pub fn get(self, orientation: Orientation) -> [[u8; 4]; 4] {
+    pub fn cells(self, orientation: Orientation) -> [[u8; 4]; 4] {
         match self {
             Self::I => BLOCK_I[orientation as usize],
             Self::O => BLOCK_O,
@@ -62,17 +70,13 @@ impl Shape {
             Self::L => Color::Cyan,
         }
     }
+
+    // TODO: Add hotspot for each tetrimino.
 }
 
 #[rustfmt::skip]
 const BLOCK_I: [[[u8; 4]; 4]; 4] = [
     [
-        [0, 0, 0, 0],
-        [1, 1, 1, 1],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-    ],
-    [
         [0, 0, 1, 0],
         [0, 0, 1, 0],
         [0, 0, 1, 0],
@@ -89,7 +93,13 @@ const BLOCK_I: [[[u8; 4]; 4]; 4] = [
         [0, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 1, 0, 0],
-    ]
+    ],
+    [
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ],
 ];
 
 #[rustfmt::skip]
@@ -125,7 +135,7 @@ const BLOCK_T: [[[u8; 4]; 4]; 4] = [
         [1, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
 ];
 
 #[rustfmt::skip]
@@ -137,15 +147,15 @@ const BLOCK_S: [[[u8; 4]; 4]; 4] = [
         [0, 0, 0, 0],
     ],
     [
+        [1, 0, 0, 0],
+        [1, 1, 0, 0],
         [0, 1, 0, 0],
-        [0, 1, 1, 0],
-        [0, 0, 1, 0],
         [0, 0, 0, 0],
     ],
     [
-        [0, 0, 0, 0],
         [0, 1, 1, 0],
         [1, 1, 0, 0],
+        [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
@@ -153,7 +163,7 @@ const BLOCK_S: [[[u8; 4]; 4]; 4] = [
         [1, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
 ];
 
 #[rustfmt::skip]
@@ -165,15 +175,15 @@ const BLOCK_Z: [[[u8; 4]; 4]; 4] = [
         [0, 0, 0, 0],
     ],
     [
-        [0, 0, 1, 0],
-        [0, 1, 1, 0],
         [0, 1, 0, 0],
+        [1, 1, 0, 0],
+        [1, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
-        [0, 0, 0, 0],
         [1, 1, 0, 0],
         [0, 1, 1, 0],
+        [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
@@ -181,12 +191,18 @@ const BLOCK_Z: [[[u8; 4]; 4]; 4] = [
         [1, 1, 0, 0],
         [1, 0, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
 ];
 
 #[rustfmt::skip]
 const BLOCK_J: [[[u8; 4]; 4]; 4] = [
     [
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
+        [1, 1, 0, 0],
+        [0, 0, 0, 0],
+    ],
+    [
         [1, 0, 0, 0],
         [1, 1, 1, 0],
         [0, 0, 0, 0],
@@ -204,31 +220,19 @@ const BLOCK_J: [[[u8; 4]; 4]; 4] = [
         [0, 0, 1, 0],
         [0, 0, 0, 0],
     ],
-    [
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [1, 1, 0, 0],
-        [0, 0, 0, 0],
-    ]
 ];
 
 #[rustfmt::skip]
 const BLOCK_L: [[[u8; 4]; 4]; 4] = [
     [
+        [1, 0, 0, 0],
+        [1, 0, 0, 0],
+        [1, 1, 0, 0],
+        [0, 0, 0, 0],
+    ],
+    [
         [0, 0, 1, 0],
         [1, 1, 1, 0],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-    ],
-    [
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [0, 1, 1, 0],
-        [0, 0, 0, 0],
-    ],
-    [
-        [1, 1, 1, 0],
-        [1, 0, 0, 0],
         [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
@@ -237,5 +241,11 @@ const BLOCK_L: [[[u8; 4]; 4]; 4] = [
         [0, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
+    [
+        [1, 1, 1, 0],
+        [1, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ],
 ];

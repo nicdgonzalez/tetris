@@ -8,9 +8,15 @@ pub struct Board {
     pub cells: [[Cell; BOARD_WIDTH]; BOARD_HEIGHT],
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Cell {
     #[default]
     Empty,
     Occupied(Color),
+}
+
+impl Cell {
+    pub fn is_empty(self) -> bool {
+        matches!(self, Self::Empty)
+    }
 }
