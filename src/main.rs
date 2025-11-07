@@ -1,5 +1,6 @@
 mod app;
 mod board;
+mod render;
 mod tetrimino;
 mod tui;
 

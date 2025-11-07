@@ -1,8 +1,6 @@
 use ratatui::style::Color;
 
-// Terminal cells are taller than they are wide, so using two cells will make a nice square.
-pub const TETRIMINO_WIDTH: usize = 2;
-pub const TETRIMINO_HEIGHT: usize = 1;
+// TODO: Make `Tetrimino` const and use it directly in the BLOCK_x definitions.
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Tetrimino {

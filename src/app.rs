@@ -4,16 +4,11 @@ use std::time::{Duration, Instant};
 
 use color_eyre::eyre::Context as _;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::layout::Flex;
 use ratatui::prelude::*;
-use ratatui::symbols::border;
-use ratatui::widgets::Block;
 use ratatui::DefaultTerminal;
 
 use crate::board::{Board, BOARD_HEIGHT, BOARD_WIDTH};
-use crate::tetrimino::{Orientation, Shape, Tetrimino, TETRIMINO_HEIGHT, TETRIMINO_WIDTH};
-
-const SCALE: usize = 1;
+use crate::tetrimino::{Orientation, Shape, Tetrimino};
 
 // Top Left: Hold piece
 // Top Right: Next piece
@@ -23,95 +18,17 @@ const SCALE: usize = 1;
 
 #[derive(Debug, Default)]
 pub struct App {
-    exit: bool,
-    board: Board,
-    tetrimino: Tetrimino,
-    x: u16,
-    y: u16,
+    pub exit: bool,
+    pub board: Board,
+    pub tetrimino: Tetrimino,
+    pub x: u16,
+    pub y: u16,
+    pub last_tick: Option<Instant>,
 }
 
 enum Message {
     UserInput(Event),
     Tick,
-}
-
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer)
-    where
-        Self: Sized,
-    {
-        let [_hold, game, _next] = Layout::default()
-            .direction(Direction::Horizontal)
-            .flex(Flex::Center)
-            .constraints(vec![
-                Constraint::Length(20),
-                // +2 because the walls count as part of the length.
-                Constraint::Length((BOARD_WIDTH * TETRIMINO_WIDTH * SCALE + 2) as u16),
-                Constraint::Length(20),
-            ])
-            .areas(area);
-
-        self.render_game(game, buf);
-    }
-}
-
-impl App {
-    fn render_game(&self, area: Rect, buf: &mut Buffer) {
-        let [game] = Layout::default()
-            .direction(Direction::Vertical)
-            .flex(Flex::Center)
-            .constraints(vec![Constraint::Length(
-                // +2 because the ceiling and floor count as part of the length.
-                (BOARD_HEIGHT * TETRIMINO_HEIGHT * SCALE + 2) as u16,
-            )])
-            .areas(area);
-
-        let title = Line::from(" Tetris ".bold());
-
-        let game_block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::THICK);
-
-        (&game_block).render(game, buf);
-
-        let inner = game_block.inner(game);
-
-        for (y, row) in self.board.cells.into_iter().enumerate() {
-            for (x, column) in row.into_iter().enumerate() {
-                let x = inner.x + (x as u16);
-                let y = inner.y + (y as u16);
-
-                for w in 1..=TETRIMINO_WIDTH {
-                    if let Some(cell) = buf.cell_mut(Position::new(x + w as u16, y + w as u16)) {
-                        if column.is_empty() {
-                            continue;
-                        }
-
-                        cell.set_symbol("█")
-                            .set_style(Style::default().fg(self.tetrimino.color()));
-                    }
-                }
-            }
-        }
-
-        for (y, row) in self.tetrimino.cells().into_iter().enumerate() {
-            for (x, column) in row.into_iter().enumerate() {
-                let x = (inner.x) + self.x + (x as u16 * TETRIMINO_WIDTH as u16);
-                let y = (inner.y) + self.y + (y as u16);
-
-                for w in 1..=TETRIMINO_WIDTH {
-                    if let Some(cell) = buf.cell_mut((x + w as u16, y)) {
-                        if column == 0 {
-                            continue;
-                        }
-
-                        cell.set_symbol("█")
-                            .set_style(Style::default().fg(self.tetrimino.color()));
-                    }
-                }
-            }
-        }
-    }
 }
 
 impl App {
@@ -128,7 +45,7 @@ impl App {
         });
 
         // Start ticker
-        let tick_interval = Duration::from_millis(1000); // The speed at which the tetrimino falls.
+        let tick_interval = Duration::from_millis(100); // The speed at which the tetrimino falls.
         thread::spawn(move || loop {
             let next_tick = Instant::now() + tick_interval;
             tx.send(Message::Tick).expect("failed to send tick event");
@@ -171,13 +88,36 @@ impl App {
             KeyCode::Char('w') | KeyCode::Up => self.rotate_tetrimino_left(),
             KeyCode::Char('s') | KeyCode::Down => self.rotate_tetrimino_right(),
             KeyCode::Char('z') => self.switch_tetrimino(), // For testing
+            KeyCode::Char(' ') => self.slam_tetrimino(),
             _ => {}
         }
     }
 
     fn handle_tick_event(&mut self) {
-        // Tetrimino falls as time goes by.
-        self.y = self.y.saturating_add(1);
+        let now = Instant::now();
+
+        if self.last_tick.is_none() {
+            self.last_tick = Some(now);
+            return;
+        }
+
+        if now < self.last_tick.unwrap() + Duration::from_millis(1000) {
+            return;
+        }
+
+        // Tetrimino falls one block at every tick.
+        //
+        // TODO: We will probably need to render ticks more often, and track
+        // the last_tick/current_tick for the falling piece. that way we can render a line complete
+        // or something with fancy graphics later without it rendering at 1 animation per second.
+        let y = self.y.saturating_add(1);
+
+        // TODO: Need to account for size of tetrimino (and scale).
+        if y < BOARD_HEIGHT {
+            self.y = y;
+        }
+
+        self.last_tick = Some(now);
     }
 
     fn exit(&mut self) {
@@ -189,7 +129,12 @@ impl App {
     }
 
     fn move_tetrimino_right(&mut self) {
-        self.x = self.x.saturating_add(1);
+        let x = self.x.saturating_add(1);
+
+        // TODO: Handle collision with wall.
+        if x < BOARD_WIDTH {
+            self.x = x;
+        }
     }
 
     fn rotate_tetrimino_left(&mut self) {
@@ -222,5 +167,11 @@ impl App {
         };
         // Always return the tetrimino back to the upright position when switching.
         self.tetrimino.orientation = Orientation::Up;
+        self.y = 0;
+    }
+
+    fn slam_tetrimino(&mut self) {
+        self.y = BOARD_HEIGHT - 1;
+        // TODO: Save to board after slam, then switch to next tetrimino.
     }
 }
