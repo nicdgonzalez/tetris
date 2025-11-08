@@ -5,8 +5,8 @@ use ratatui::prelude::*;
 use ratatui::symbols::border;
 use ratatui::widgets::Block;
 
-use crate::app::App;
-use crate::board::{BOARD_HEIGHT, BOARD_WIDTH};
+use crate::app::Game;
+use crate::board::{Cell, BOARD_HEIGHT, BOARD_WIDTH};
 
 const SCALE: u16 = 2;
 
@@ -20,7 +20,7 @@ pub const TETRIMINO_HEIGHT: u16 = 1;
 // Bottom Right: Score/stats
 // Bottom Left: Controls
 
-impl Widget for &App {
+impl Widget for &Game {
     fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
@@ -40,7 +40,7 @@ impl Widget for &App {
     }
 }
 
-impl App {
+impl Game {
     fn render_game(&self, area: Rect, buf: &mut Buffer) {
         let [game] = Layout::default()
             .direction(Direction::Vertical)
@@ -68,17 +68,22 @@ impl App {
     fn render_board(&self, area: &Rect, buf: &mut Buffer) {
         for (y, row) in self.board.cells.into_iter().enumerate() {
             for (x, column) in row.into_iter().enumerate() {
-                let x = area.x + (x as u16);
-                let y = area.y + (y as u16);
+                let color = match column {
+                    Cell::Empty => continue,
+                    Cell::Occupied(color) => color,
+                };
 
-                for w in 1..=TETRIMINO_WIDTH * SCALE {
-                    if let Some(cell) = buf.cell_mut(Position::new(x + w, y + w)) {
-                        if column.is_empty() {
-                            continue;
+                let x = (area.x as i16) + (x as i16 * TETRIMINO_WIDTH as i16 * SCALE as i16);
+                let y = area.y as i16 + (y as i16 * TETRIMINO_HEIGHT as i16 * SCALE as i16);
+
+                for h in 0..TETRIMINO_HEIGHT * SCALE {
+                    for w in 0..TETRIMINO_WIDTH * SCALE {
+                        let x = x as u16 + w;
+                        let y = y as u16 + h;
+
+                        if let Some(cell) = buf.cell_mut((x, y)) {
+                            cell.set_symbol("█").set_style(Style::default().fg(color));
                         }
-
-                        cell.set_symbol("█")
-                            .set_style(Style::default().bg(self.tetrimino.color()));
                     }
                 }
             }
@@ -109,18 +114,16 @@ impl App {
                 // 1 1 1 1 1 1 1 1 1 1 1 1
                 // 1 1 1 1 1 1 1 1 1 1 1 1
 
-                let x = (area.x)
-                    + (self.x * TETRIMINO_WIDTH * SCALE)
-                    + (x as u16 * TETRIMINO_WIDTH * SCALE);
-                // TODO: `y` is wrong here.
-                // (area.y) + (self.y * TETRIMINO_HEIGHT * SCALE) + (y as u16 * TETRIMINO_HEIGHT);
-                let y = area.y
-                    + (self.y * TETRIMINO_HEIGHT * SCALE)
-                    + (y as u16 * TETRIMINO_HEIGHT * SCALE);
+                let x = (area.x as i16)
+                    + (self.x * TETRIMINO_WIDTH as i16 * SCALE as i16)
+                    + (x as i16 * TETRIMINO_WIDTH as i16 * SCALE as i16);
+                let y = area.y as i16
+                    + (self.y * TETRIMINO_HEIGHT as i16 * SCALE as i16)
+                    + (y as i16 * TETRIMINO_HEIGHT as i16 * SCALE as i16);
 
                 for h in 0..TETRIMINO_HEIGHT * SCALE {
                     for w in 0..TETRIMINO_WIDTH * SCALE {
-                        if let Some(cell) = buf.cell_mut((x + w, y + h)) {
+                        if let Some(cell) = buf.cell_mut((x as u16 + w, y as u16 + h)) {
                             cell.set_symbol("█")
                                 .set_style(Style::default().fg(self.tetrimino.color()));
                         }

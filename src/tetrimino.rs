@@ -1,6 +1,16 @@
 use ratatui::style::Color;
 
-// TODO: Make `Tetrimino` const and use it directly in the BLOCK_x definitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Point {
+    pub column: i16,
+    pub row: i16,
+}
+
+impl Point {
+    pub const fn new(row: i16, column: i16) -> Self {
+        Self { column, row }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Tetrimino {
@@ -9,10 +19,6 @@ pub struct Tetrimino {
 }
 
 impl Tetrimino {
-    pub fn new(shape: Shape, orientation: Orientation) -> Self {
-        Self { shape, orientation }
-    }
-
     pub fn cells(&self) -> [[u8; 4]; 4] {
         self.shape.cells(self.orientation)
     }
@@ -20,13 +26,41 @@ impl Tetrimino {
     pub fn color(&self) -> Color {
         self.shape.color()
     }
+
+    pub fn hitbox_top_left(&self) -> Point {
+        let index = usize::from(self.orientation as u8);
+
+        match self.shape {
+            Shape::I => HITBOX_I[index].0,
+            Shape::O => HITBOX_O.0,
+            Shape::T => HITBOX_T[index].0,
+            Shape::S => HITBOX_S[index].0,
+            Shape::Z => HITBOX_Z[index].0,
+            Shape::J => HITBOX_J[index].0,
+            Shape::L => HITBOX_L[index].0,
+        }
+    }
+
+    pub fn hitbox_bottom_right(self) -> Point {
+        let index = usize::from(self.orientation as u8);
+
+        match self.shape {
+            Shape::I => HITBOX_I[index].1,
+            Shape::O => HITBOX_O.1,
+            Shape::T => HITBOX_T[index].1,
+            Shape::S => HITBOX_S[index].1,
+            Shape::Z => HITBOX_Z[index].1,
+            Shape::J => HITBOX_J[index].1,
+            Shape::L => HITBOX_L[index].1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Shape {
+    #[default]
     I,
     O,
-    #[default]
     T,
     S,
     Z,
@@ -46,14 +80,16 @@ pub enum Orientation {
 
 impl Shape {
     pub fn cells(self, orientation: Orientation) -> [[u8; 4]; 4] {
+        let index = usize::from(orientation as u8);
+
         match self {
-            Self::I => BLOCK_I[orientation as usize],
+            Self::I => BLOCK_I[index],
             Self::O => BLOCK_O,
-            Self::T => BLOCK_T[orientation as usize],
-            Self::S => BLOCK_S[orientation as usize],
-            Self::Z => BLOCK_Z[orientation as usize],
-            Self::J => BLOCK_J[orientation as usize],
-            Self::L => BLOCK_L[orientation as usize],
+            Self::T => BLOCK_T[index],
+            Self::S => BLOCK_S[index],
+            Self::Z => BLOCK_Z[index],
+            Self::J => BLOCK_J[index],
+            Self::L => BLOCK_L[index],
         }
     }
 
@@ -68,8 +104,6 @@ impl Shape {
             Self::L => Color::Cyan,
         }
     }
-
-    // TODO: Add hotspot for each tetrimino.
 }
 
 #[rustfmt::skip]
@@ -100,6 +134,13 @@ const BLOCK_I: [[[u8; 4]; 4]; 4] = [
     ],
 ];
 
+const HITBOX_I: [(Point, Point); 4] = [
+    (Point::new(0, 2), Point::new(3, 2)),
+    (Point::new(2, 0), Point::new(2, 3)),
+    (Point::new(0, 1), Point::new(3, 1)),
+    (Point::new(1, 0), Point::new(1, 3)),
+];
+
 #[rustfmt::skip]
 const BLOCK_O: [[u8; 4]; 4] = [
     [0, 1, 1, 0],
@@ -107,6 +148,8 @@ const BLOCK_O: [[u8; 4]; 4] = [
     [0, 0, 0, 0],
     [0, 0, 0, 0],
 ];
+
+const HITBOX_O: (Point, Point) = (Point::new(0, 1), Point::new(1, 2));
 
 #[rustfmt::skip]
 const BLOCK_T: [[[u8; 4]; 4]; 4] = [
@@ -134,6 +177,13 @@ const BLOCK_T: [[[u8; 4]; 4]; 4] = [
         [0, 1, 0, 0],
         [0, 0, 0, 0],
     ],
+];
+
+const HITBOX_T: [(Point, Point); 4] = [
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 1), Point::new(2, 2)),
+    (Point::new(1, 0), Point::new(2, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
 ];
 
 #[rustfmt::skip]
@@ -164,6 +214,13 @@ const BLOCK_S: [[[u8; 4]; 4]; 4] = [
     ],
 ];
 
+const HITBOX_S: [(Point, Point); 4] = [
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
+];
+
 #[rustfmt::skip]
 const BLOCK_Z: [[[u8; 4]; 4]; 4] = [
     [
@@ -190,6 +247,13 @@ const BLOCK_Z: [[[u8; 4]; 4]; 4] = [
         [1, 0, 0, 0],
         [0, 0, 0, 0],
     ],
+];
+
+const HITBOX_Z: [(Point, Point); 4] = [
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
 ];
 
 #[rustfmt::skip]
@@ -220,6 +284,13 @@ const BLOCK_J: [[[u8; 4]; 4]; 4] = [
     ],
 ];
 
+const HITBOX_J: [(Point, Point); 4] = [
+    (Point::new(0, 0), Point::new(2, 1)),
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 1), Point::new(2, 2)),
+    (Point::new(1, 0), Point::new(2, 2)),
+];
+
 #[rustfmt::skip]
 const BLOCK_L: [[[u8; 4]; 4]; 4] = [
     [
@@ -246,4 +317,11 @@ const BLOCK_L: [[[u8; 4]; 4]; 4] = [
         [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
+];
+
+const HITBOX_L: [(Point, Point); 4] = [
+    (Point::new(0, 0), Point::new(2, 1)),
+    (Point::new(0, 0), Point::new(1, 2)),
+    (Point::new(0, 0), Point::new(2, 1)),
+    (Point::new(0, 0), Point::new(1, 2)),
 ];
