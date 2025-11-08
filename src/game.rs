@@ -129,6 +129,8 @@ impl Game {
             self.switch_tetrimino();
         }
 
+        // TODO: Check if any lines were cleared.
+
         self.last_tick = Some(now);
     }
 
@@ -158,9 +160,7 @@ impl Game {
                 let x = target_x + offset_x as i16;
                 let y = target_y + offset_y as i16;
 
-                if x < 0 || x >= BOARD_WIDTH as i16 {
-                    return false;
-                } else if y < 0 || y >= BOARD_HEIGHT as i16 {
+                if (x < 0 || x >= BOARD_WIDTH as i16) || (y < 0 || y >= BOARD_HEIGHT as i16) {
                     return false;
                 } else if let Cell::Occupied(_) = self.board.cells[y as usize][x as usize] {
                     return false;
@@ -192,11 +192,6 @@ impl Game {
     }
 
     fn rotate_tetrimino_left(&mut self) {
-        let before = (
-            self.tetrimino.hitbox_top_left(),
-            self.tetrimino.hitbox_bottom_right(),
-        );
-
         self.tetrimino.orientation = match self.tetrimino.orientation {
             Orientation::Up => Orientation::Right,
             Orientation::Right => Orientation::Down,
@@ -211,34 +206,57 @@ impl Game {
 
         // Check if the rotated piece is in-bounds.
         if self.x - after.0.column < 0 {
-            self.x = self.x.saturating_add(after.0.column - before.0.column);
+            self.x = after.0.column;
         }
 
         if self.x + after.1.column >= BOARD_WIDTH as i16 {
             self.x = BOARD_WIDTH as i16 - after.1.column - 1;
         }
+
+        if self.y + after.1.row > BOARD_HEIGHT as i16 {
+            self.y = BOARD_HEIGHT as i16 - after.1.row - 1;
+        }
     }
 
     fn rotate_tetrimino_right(&mut self) {
-        let before = (
-            self.tetrimino.hitbox_top_left(),
-            self.tetrimino.hitbox_bottom_right(),
-        );
-
-        self.tetrimino.orientation = match self.tetrimino.orientation {
+        let orientation = match self.tetrimino.orientation {
             Orientation::Up => Orientation::Left,
             Orientation::Left => Orientation::Down,
             Orientation::Down => Orientation::Right,
             Orientation::Right => Orientation::Up,
         };
 
+        // TODO: Test if turning would conflict with other tetriminos.
+        // TODO: Create a `rotate_clockwise` and `rotate_counterclockwise` method on Tetrimino
+        // TODO: Decouple the tetrimino_fits function from the Game type.
+
+        self.tetrimino.orientation = orientation;
+
         let after = (
             self.tetrimino.hitbox_top_left(),
             self.tetrimino.hitbox_bottom_right(),
         );
 
+        // TODO: Check that the rotation doesn't enter another block.
+
+        // Check if the rotated piece is in-bounds.
         if self.x - after.0.column < 0 {
-            self.x = self.x.saturating_add(after.0.column - before.0.column);
+            self.x = after.0.column;
+        }
+
+        if self.x + after.1.column >= BOARD_WIDTH as i16 {
+            self.x = BOARD_WIDTH as i16 - after.1.column - 1;
+        }
+
+        if self.y + after.1.row > BOARD_HEIGHT as i16 {
+            self.y = BOARD_HEIGHT as i16 - after.1.row - 1;
+        }
+
+        if !self.tetrimino_fits(self.x, self.y)
+            && self.tetrimino_fits(self.x, self.y.saturating_sub(1))
+        {
+            // Go up one if the block conflicts with another block.
+            self.y = self.y.saturating_sub(1);
         }
     }
 
@@ -263,7 +281,7 @@ impl Game {
         loop {
             let target_y = self.y.saturating_add(1);
 
-            if target_y >= BOARD_HEIGHT as i16 - self.tetrimino.hitbox_bottom_right().column {
+            if target_y > BOARD_HEIGHT as i16 - self.tetrimino.hitbox_bottom_right().column {
                 break;
             }
 

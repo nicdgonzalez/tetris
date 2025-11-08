@@ -5,8 +5,8 @@ use ratatui::prelude::*;
 use ratatui::symbols::border;
 use ratatui::widgets::Block;
 
-use crate::app::Game;
 use crate::board::{Cell, BOARD_HEIGHT, BOARD_WIDTH};
+use crate::game::Game;
 
 const SCALE: u16 = 2;
 
