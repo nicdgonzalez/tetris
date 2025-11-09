@@ -101,8 +101,8 @@ impl Game {
             KeyCode::Char('a') | KeyCode::Left => self.move_tetrimino_left(),
             KeyCode::Char('s') | KeyCode::Down => self.fall_faster(),
             KeyCode::Char('d') | KeyCode::Right => self.move_tetrimino_right(),
-            KeyCode::Char('j') => self.rotate_tetrimino_left(),
-            KeyCode::Char('k') => self.rotate_tetrimino_right(),
+            KeyCode::Char('j') => self.rotate_tetrimino(RotateDirection::Counterclockwise),
+            KeyCode::Char('k') => self.rotate_tetrimino(RotateDirection::Clockwise),
             KeyCode::Char('q') => self.switch_tetrimino(), // For testing
             _ => {}
         }
@@ -202,41 +202,19 @@ impl Game {
         }
     }
 
-    fn rotate_tetrimino_left(&mut self) {
-        self.tetrimino.rotate(RotateDirection::Counterclockwise);
-
-        let hitbox = self.tetrimino.hitbox();
-
-        // Check if the rotated piece is in-bounds.
-        if self.x - i32::from(hitbox.left) < 0 {
-            self.x = hitbox.left.into();
-        }
-
-        if self.x + i32::from(hitbox.right) >= BOARD_WIDTH.into() {
-            self.x = i32::from(BOARD_WIDTH) - i32::from(hitbox.right) - 1;
-        }
-
-        if self.y + i32::from(hitbox.bottom) > BOARD_HEIGHT.into() {
-            self.y = i32::from(BOARD_HEIGHT) - i32::from(hitbox.bottom) - 1;
-        }
-    }
-
-    fn rotate_tetrimino_right(&mut self) {
+    fn rotate_tetrimino(&mut self, direction: RotateDirection) {
         let before = self.tetrimino;
 
         self.tetrimino = Tetrimino {
             shape: self.tetrimino.shape,
-            orientation: self
-                .tetrimino
-                .orientation
-                .rotate(RotateDirection::Clockwise),
+            orientation: self.tetrimino.orientation.rotate(direction),
         };
 
         let hitbox = self.tetrimino.hitbox();
 
         // Check if the rotated piece is in-bounds.
         if self.x - i32::from(hitbox.left) < 0 {
-            self.x = hitbox.left.into();
+            self.x = 0 - i32::from(hitbox.left) + 1;
         }
 
         if self.x + i32::from(hitbox.right) >= BOARD_WIDTH.into() {

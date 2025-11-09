@@ -1,5 +1,7 @@
 //! This module contains the logic for rendering widgets on the screen.
 
+use std::num::NonZeroU8;
+
 use ratatui::layout::Flex;
 use ratatui::prelude::*;
 use ratatui::symbols::border;
@@ -8,7 +10,7 @@ use ratatui::widgets::Block;
 use crate::board::{Cell, BOARD_HEIGHT, BOARD_WIDTH};
 use crate::game::Game;
 
-const SCALE: u8 = 2;
+const SCALE: NonZeroU8 = NonZeroU8::new(2).unwrap();
 
 // Terminal cells are 2x taller than they are wide, so using two cells makes a nice square block.
 pub const TETRIMINO_WIDTH: u16 = 2;
@@ -31,7 +33,7 @@ impl Widget for &Game {
             .constraints(vec![
                 Constraint::Length(20),
                 // +2 because the walls count as part of the length.
-                Constraint::Length(BOARD_WIDTH * TETRIMINO_WIDTH * u16::from(SCALE) + 2),
+                Constraint::Length(BOARD_WIDTH * TETRIMINO_WIDTH * u16::from(SCALE.get()) + 2),
                 Constraint::Length(20),
             ])
             .areas(area);
@@ -47,7 +49,7 @@ impl Game {
             .flex(Flex::Center)
             .constraints(vec![Constraint::Length(
                 // +2 because the ceiling and floor count as part of the length.
-                BOARD_HEIGHT * TETRIMINO_HEIGHT * u16::from(SCALE) + 2,
+                BOARD_HEIGHT * TETRIMINO_HEIGHT * u16::from(SCALE.get()) + 2,
             )])
             .areas(area);
 
@@ -66,20 +68,24 @@ impl Game {
     }
 
     fn render_board(&self, area: &Rect, buf: &mut Buffer) {
-        for (y, row) in self.playfield.cells.into_iter().enumerate() {
-            for (x, column) in row.into_iter().enumerate() {
+        for (dy, row) in self.playfield.cells.into_iter().enumerate() {
+            for (dx, column) in row.into_iter().enumerate() {
                 let color = match column {
                     Cell::Empty => continue,
                     Cell::Occupied(color) => color,
                 };
 
-                let x = (area.x as i16) + (x as i16 * TETRIMINO_WIDTH as i16 * SCALE as i16);
-                let y = area.y as i16 + (y as i16 * TETRIMINO_HEIGHT as i16 * SCALE as i16);
+                let scale = i32::from(SCALE.get());
 
-                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE) {
-                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE) {
-                        let x = x as u16 + w;
-                        let y = y as u16 + h;
+                let x: i32 = i32::from(area.x)
+                    + (i32::try_from(dx).unwrap() * i32::from(TETRIMINO_WIDTH) * scale);
+                let y: i32 = i32::from(area.y)
+                    + (i32::try_from(dy).unwrap() * i32::from(TETRIMINO_HEIGHT) * scale);
+
+                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE.get()) {
+                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE.get()) {
+                        let x = u16::try_from(x + i32::from(w)).unwrap();
+                        let y = u16::try_from(y + i32::from(h)).unwrap();
 
                         if let Some(cell) = buf.cell_mut((x, y)) {
                             cell.set_symbol("█").set_style(Style::default().fg(color));
@@ -91,8 +97,8 @@ impl Game {
     }
 
     fn render_active_tetrimino(&self, area: &Rect, buf: &mut Buffer) {
-        for (y, row) in self.tetrimino.cells().into_iter().enumerate() {
-            for (x, column) in row.into_iter().enumerate() {
+        for (dy, row) in self.tetrimino.cells().into_iter().enumerate() {
+            for (dx, column) in row.into_iter().enumerate() {
                 if column == 0 {
                     continue;
                 }
@@ -114,19 +120,24 @@ impl Game {
                 // 1 1 1 1 1 1 1 1 1 1 1 1
                 // 1 1 1 1 1 1 1 1 1 1 1 1
 
-                let x: i32 = i32::from(area.x)
-                    + (self.x * i32::from(TETRIMINO_WIDTH) * i32::from(SCALE))
-                    + (i32::try_from(x).unwrap() * i32::from(TETRIMINO_WIDTH) * i32::from(SCALE));
-                let y: i32 = i32::from(area.y)
-                    + (self.y * i32::from(TETRIMINO_HEIGHT) * i32::from(SCALE))
-                    + (i32::try_from(y).unwrap() * i32::from(TETRIMINO_HEIGHT) * i32::from(SCALE));
+                let scale = i32::from(SCALE.get());
 
-                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE) {
-                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE) {
-                        if let Some(cell) = buf.cell_mut((
-                            u16::try_from(x + i32::from(w)).unwrap(),
-                            u16::try_from(y + i32::from(h)).unwrap(),
-                        )) {
+                // Calculate our enlarged X to match the proper tetrimino width and scale.
+                let width = self.x * i32::from(TETRIMINO_WIDTH) * scale;
+                let offset_x = i32::try_from(dx).unwrap() * i32::from(TETRIMINO_WIDTH) * scale;
+                let x = i32::from(area.x) + width + offset_x;
+
+                // Calculate our enlarged Y to match the proper tetrimino height and scale.
+                let height = self.y * i32::from(TETRIMINO_HEIGHT) * scale;
+                let offset_y = i32::try_from(dy).unwrap() * i32::from(TETRIMINO_HEIGHT) * scale;
+                let y = i32::from(area.y) + height + offset_y;
+
+                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE.get()) {
+                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE.get()) {
+                        let x = u16::try_from(x + i32::from(w)).unwrap();
+                        let y = u16::try_from(y + i32::from(h)).unwrap();
+
+                        if let Some(cell) = buf.cell_mut((x, y)) {
                             cell.set_symbol("█")
                                 .set_style(Style::default().fg(self.tetrimino.color()));
                         }
