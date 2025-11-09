@@ -11,7 +11,7 @@ const _: () = assert!(usize::BITS >= u16::BITS);
 type Cells = [[Cell; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Board {
+pub struct Playfield {
     pub cells: Cells,
 }
 

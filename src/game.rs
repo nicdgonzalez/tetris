@@ -7,21 +7,39 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::DefaultTerminal;
 
-use crate::board::{Board, Cell, BOARD_HEIGHT, BOARD_WIDTH};
-use crate::tetrimino::{Orientation, Shape, Tetrimino};
+use crate::board::{Cell, Playfield, BOARD_HEIGHT, BOARD_WIDTH};
+use crate::tetrimino::{Cells, Orientation, RotateDirection, Shape, Tetrimino};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Game {
     pub exit: bool,
-    pub board: Board,
+    pub playfield: Playfield,
     pub tetrimino: Tetrimino,
-    pub x: i16,
-    pub y: i16,
+    // Must be able to hold negative indices because some tetriminoes (e.g., `I` and `O`)
+    // are offset from the edge of the grid.
+    pub x: i32,
+    pub y: i32,
     pub last_tick: Option<Instant>,
 }
 
+impl Default for Game {
+    fn default() -> Self {
+        Self {
+            exit: false,
+            playfield: Playfield::default(),
+            tetrimino: Tetrimino {
+                shape: Shape::T,
+                orientation: Orientation::Up,
+            },
+            x: 0,
+            y: 0,
+            last_tick: None,
+        }
+    }
+}
+
 enum Message {
-    UserInput(Event),
+    Input(Event),
     Tick,
 }
 
@@ -33,13 +51,13 @@ impl Game {
         thread::spawn(move || loop {
             if let Ok(true) = event::poll(Duration::from_millis(50)) {
                 tx_clone
-                    .send(Message::UserInput(event::read().unwrap()))
+                    .send(Message::Input(event::read().unwrap()))
                     .expect("failed to send input event");
             }
         });
 
         // Start ticker
-        let tick_interval = Duration::from_millis(100); // The speed at which the tetrimino falls.
+        let tick_interval = Duration::from_millis(100);
         thread::spawn(move || loop {
             let next_tick = Instant::now() + tick_interval;
             tx.send(Message::Tick).expect("failed to send tick event");
@@ -63,7 +81,7 @@ impl Game {
 
     fn handle_events(&mut self, rx: &mpsc::Receiver<Message>) -> color_eyre::Result<()> {
         match rx.recv().wrap_err("failed to receive event")? {
-            Message::UserInput(input) => match input {
+            Message::Input(input) => match input {
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                     self.handle_key_event(key_event)
                 }
@@ -75,6 +93,8 @@ impl Game {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        // Standard mappings for computer keyboards:
+        // https://tetris.fandom.com/wiki/Tetris_Guideline
         match key_event.code {
             KeyCode::Esc => self.exit(),
             KeyCode::Char('w') | KeyCode::Up => self.slam_tetrimino(),
@@ -96,73 +116,64 @@ impl Game {
             return;
         }
 
-        // Tetrimino falls one block every second.
-        if now < self.last_tick.unwrap() + Duration::from_millis(1000) {
+        if now < self.last_tick.unwrap() + Duration::from_millis(500) {
             return;
         }
 
+        self.last_tick = Some(now);
+
         let y = self.y.saturating_add(1);
 
-        // Replace BOARD_HEIGHT with occuppied board cells.
-        //
-        // 1 0 0 0 0 0
-        // 1 1 0 0 0 0
-        // 1 2 2 2 2 0
-        //
-        // I can use the bottom_right hitbox and scan the whole bottom row for collisions... maybe?
-        //
-        // 1 0 0 0
-        // 1 1 0 0
-        // 1 2 0 0
-        // 0 2 0 0
-        // 0 2 0 0
-        // 0 2 0 0
-        //
-        // I don't think there is a way to get around scanning all of the cells and checking
-        // collisions.
-        if self.tetrimino_fits(self.x, y) {
-            //if (y + self.tetrimino.hitbox_bottom_right().column) < BOARD_HEIGHT as i16 {
+        if self.tetrimino_fits(self.x, y, self.tetrimino.cells()) {
             self.y = y;
         } else {
             // Save to board.
-            self.save_board();
+            self.update_board();
             self.switch_tetrimino();
         }
 
         // TODO: Check if any lines were cleared.
-
-        self.last_tick = Some(now);
     }
 
-    fn save_board(&mut self) {
+    fn update_board(&mut self) {
         for (offset_y, row) in self.tetrimino.cells().into_iter().enumerate() {
             for (offset_x, column) in row.into_iter().enumerate() {
                 if column == 0 {
                     continue;
                 }
 
-                let x = self.x + offset_x as i16;
-                let y = self.y + offset_y as i16;
+                // X/Y offsets cannot be greater than 4.
+                assert_eq!(self.tetrimino.cells().len(), 4);
+                let x = self.x + i32::try_from(offset_x).unwrap();
+                assert_eq!(row.len(), 4);
+                let y = self.y + i32::try_from(offset_y).unwrap();
 
-                self.board.cells[y as usize][x as usize] = Cell::Occupied(self.tetrimino.color());
+                self.playfield.cells[usize::try_from(y).expect("invalid playboard row")]
+                    [usize::try_from(x).expect("invalid playboard column")] =
+                    Cell::Occupied(self.tetrimino.color());
             }
         }
     }
 
-    // TODO: Better error handling... the number of times this program has panicked... :-)
-    fn tetrimino_fits(&self, target_x: i16, target_y: i16) -> bool {
-        for (offset_y, row) in self.tetrimino.cells().into_iter().enumerate() {
+    fn tetrimino_fits(&self, target_x: i32, target_y: i32, cells: Cells) -> bool {
+        for (offset_y, row) in cells.into_iter().enumerate() {
             for (offset_x, column) in row.into_iter().enumerate() {
                 if column == 0 {
                     continue; // There is no block to collide with.
                 }
 
-                let x = target_x + offset_x as i16;
-                let y = target_y + offset_y as i16;
+                // X/Y offsets cannot be greater than 4.
+                assert_eq!(cells.len(), 4);
+                let x = target_x + i32::try_from(offset_x).unwrap();
+                assert_eq!(row.len(), 4);
+                let y = target_y + i32::try_from(offset_y).unwrap();
 
-                if (x < 0 || x >= BOARD_WIDTH as i16) || (y < 0 || y >= BOARD_HEIGHT as i16) {
+                if (x < 0 || x >= BOARD_WIDTH.into()) || (y < 0 || y >= BOARD_HEIGHT.into()) {
                     return false;
-                } else if let Cell::Occupied(_) = self.board.cells[y as usize][x as usize] {
+                } else if let Cell::Occupied(_) = self.playfield.cells
+                    [usize::try_from(y).expect("invalid playfield row")]
+                    [usize::try_from(x).expect("invalid playfield column")]
+                {
                     return false;
                 }
             }
@@ -178,7 +189,7 @@ impl Game {
     fn move_tetrimino_left(&mut self) {
         let x = self.x.saturating_sub(1);
 
-        if self.tetrimino_fits(x, self.y) {
+        if self.tetrimino_fits(x, self.y, self.tetrimino.cells()) {
             self.x = x;
         }
     }
@@ -186,77 +197,65 @@ impl Game {
     fn move_tetrimino_right(&mut self) {
         let x = self.x.saturating_add(1);
 
-        if self.tetrimino_fits(x, self.y) {
+        if self.tetrimino_fits(x, self.y, self.tetrimino.cells()) {
             self.x = x;
         }
     }
 
     fn rotate_tetrimino_left(&mut self) {
-        self.tetrimino.orientation = match self.tetrimino.orientation {
-            Orientation::Up => Orientation::Right,
-            Orientation::Right => Orientation::Down,
-            Orientation::Down => Orientation::Left,
-            Orientation::Left => Orientation::Up,
-        };
+        self.tetrimino.rotate(RotateDirection::Counterclockwise);
 
-        let after = (
-            self.tetrimino.hitbox_top_left(),
-            self.tetrimino.hitbox_bottom_right(),
-        );
+        let hitbox = self.tetrimino.hitbox();
 
         // Check if the rotated piece is in-bounds.
-        if self.x - after.0.column < 0 {
-            self.x = after.0.column;
+        if self.x - i32::from(hitbox.left) < 0 {
+            self.x = hitbox.left.into();
         }
 
-        if self.x + after.1.column >= BOARD_WIDTH as i16 {
-            self.x = BOARD_WIDTH as i16 - after.1.column - 1;
+        if self.x + i32::from(hitbox.right) >= BOARD_WIDTH.into() {
+            self.x = i32::from(BOARD_WIDTH) - i32::from(hitbox.right) - 1;
         }
 
-        if self.y + after.1.row > BOARD_HEIGHT as i16 {
-            self.y = BOARD_HEIGHT as i16 - after.1.row - 1;
+        if self.y + i32::from(hitbox.bottom) > BOARD_HEIGHT.into() {
+            self.y = i32::from(BOARD_HEIGHT) - i32::from(hitbox.bottom) - 1;
         }
     }
 
     fn rotate_tetrimino_right(&mut self) {
-        let orientation = match self.tetrimino.orientation {
-            Orientation::Up => Orientation::Left,
-            Orientation::Left => Orientation::Down,
-            Orientation::Down => Orientation::Right,
-            Orientation::Right => Orientation::Up,
+        let before = self.tetrimino;
+
+        self.tetrimino = Tetrimino {
+            shape: self.tetrimino.shape,
+            orientation: self
+                .tetrimino
+                .orientation
+                .rotate(RotateDirection::Clockwise),
         };
 
-        // TODO: Test if turning would conflict with other tetriminos.
-        // TODO: Create a `rotate_clockwise` and `rotate_counterclockwise` method on Tetrimino
-        // TODO: Decouple the tetrimino_fits function from the Game type.
-
-        self.tetrimino.orientation = orientation;
-
-        let after = (
-            self.tetrimino.hitbox_top_left(),
-            self.tetrimino.hitbox_bottom_right(),
-        );
-
-        // TODO: Check that the rotation doesn't enter another block.
+        let hitbox = self.tetrimino.hitbox();
 
         // Check if the rotated piece is in-bounds.
-        if self.x - after.0.column < 0 {
-            self.x = after.0.column;
+        if self.x - i32::from(hitbox.left) < 0 {
+            self.x = hitbox.left.into();
         }
 
-        if self.x + after.1.column >= BOARD_WIDTH as i16 {
-            self.x = BOARD_WIDTH as i16 - after.1.column - 1;
+        if self.x + i32::from(hitbox.right) >= BOARD_WIDTH.into() {
+            self.x = i32::from(BOARD_WIDTH) - i32::from(hitbox.right) - 1;
         }
 
-        if self.y + after.1.row > BOARD_HEIGHT as i16 {
-            self.y = BOARD_HEIGHT as i16 - after.1.row - 1;
+        if self.y + i32::from(hitbox.bottom) > BOARD_HEIGHT.into() {
+            self.y = i32::from(BOARD_HEIGHT) - i32::from(hitbox.bottom) - 1;
         }
 
-        if !self.tetrimino_fits(self.x, self.y)
-            && self.tetrimino_fits(self.x, self.y.saturating_sub(1))
+        if !self.tetrimino_fits(self.x, self.y, self.tetrimino.cells())
+            && self.tetrimino_fits(self.x, self.y.saturating_sub(1), self.tetrimino.cells())
         {
             // Go up one if the block conflicts with another block.
             self.y = self.y.saturating_sub(1);
+        }
+
+        if !self.tetrimino_fits(self.x, self.y, self.tetrimino.cells()) {
+            self.tetrimino = before;
         }
     }
 
@@ -274,18 +273,19 @@ impl Game {
         // Always return the tetrimino back to the upright position when switching.
         self.tetrimino.orientation = Orientation::Up;
         self.y = 0;
-        self.x = (BOARD_WIDTH as i16).checked_div(2).unwrap();
+        self.x = i32::from(BOARD_WIDTH).checked_div(2).unwrap();
     }
 
     fn slam_tetrimino(&mut self) {
         loop {
             let target_y = self.y.saturating_add(1);
+            let bottom = i32::from(BOARD_HEIGHT) - i32::from(self.tetrimino.hitbox().bottom);
 
-            if target_y > BOARD_HEIGHT as i16 - self.tetrimino.hitbox_bottom_right().column {
+            if target_y > bottom {
                 break;
             }
 
-            if self.tetrimino_fits(self.x, target_y) {
+            if self.tetrimino_fits(self.x, target_y, self.tetrimino.cells()) {
                 self.y = target_y;
                 continue;
             }
@@ -297,7 +297,7 @@ impl Game {
     fn fall_faster(&mut self) {
         let y = self.y.saturating_add(1);
 
-        if self.tetrimino_fits(self.x, y) {
+        if self.tetrimino_fits(self.x, y, self.tetrimino.cells()) {
             self.y = y;
         }
     }

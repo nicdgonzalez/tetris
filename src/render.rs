@@ -8,7 +8,7 @@ use ratatui::widgets::Block;
 use crate::board::{Cell, BOARD_HEIGHT, BOARD_WIDTH};
 use crate::game::Game;
 
-const SCALE: u16 = 2;
+const SCALE: u8 = 2;
 
 // Terminal cells are 2x taller than they are wide, so using two cells makes a nice square block.
 pub const TETRIMINO_WIDTH: u16 = 2;
@@ -31,7 +31,7 @@ impl Widget for &Game {
             .constraints(vec![
                 Constraint::Length(20),
                 // +2 because the walls count as part of the length.
-                Constraint::Length(BOARD_WIDTH * TETRIMINO_WIDTH * SCALE + 2),
+                Constraint::Length(BOARD_WIDTH * TETRIMINO_WIDTH * u16::from(SCALE) + 2),
                 Constraint::Length(20),
             ])
             .areas(area);
@@ -47,7 +47,7 @@ impl Game {
             .flex(Flex::Center)
             .constraints(vec![Constraint::Length(
                 // +2 because the ceiling and floor count as part of the length.
-                BOARD_HEIGHT * TETRIMINO_HEIGHT * SCALE + 2,
+                BOARD_HEIGHT * TETRIMINO_HEIGHT * u16::from(SCALE) + 2,
             )])
             .areas(area);
 
@@ -66,7 +66,7 @@ impl Game {
     }
 
     fn render_board(&self, area: &Rect, buf: &mut Buffer) {
-        for (y, row) in self.board.cells.into_iter().enumerate() {
+        for (y, row) in self.playfield.cells.into_iter().enumerate() {
             for (x, column) in row.into_iter().enumerate() {
                 let color = match column {
                     Cell::Empty => continue,
@@ -76,8 +76,8 @@ impl Game {
                 let x = (area.x as i16) + (x as i16 * TETRIMINO_WIDTH as i16 * SCALE as i16);
                 let y = area.y as i16 + (y as i16 * TETRIMINO_HEIGHT as i16 * SCALE as i16);
 
-                for h in 0..TETRIMINO_HEIGHT * SCALE {
-                    for w in 0..TETRIMINO_WIDTH * SCALE {
+                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE) {
+                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE) {
                         let x = x as u16 + w;
                         let y = y as u16 + h;
 
@@ -114,16 +114,19 @@ impl Game {
                 // 1 1 1 1 1 1 1 1 1 1 1 1
                 // 1 1 1 1 1 1 1 1 1 1 1 1
 
-                let x = (area.x as i16)
-                    + (self.x * TETRIMINO_WIDTH as i16 * SCALE as i16)
-                    + (x as i16 * TETRIMINO_WIDTH as i16 * SCALE as i16);
-                let y = area.y as i16
-                    + (self.y * TETRIMINO_HEIGHT as i16 * SCALE as i16)
-                    + (y as i16 * TETRIMINO_HEIGHT as i16 * SCALE as i16);
+                let x: i32 = i32::from(area.x)
+                    + (self.x * i32::from(TETRIMINO_WIDTH) * i32::from(SCALE))
+                    + (i32::try_from(x).unwrap() * i32::from(TETRIMINO_WIDTH) * i32::from(SCALE));
+                let y: i32 = i32::from(area.y)
+                    + (self.y * i32::from(TETRIMINO_HEIGHT) * i32::from(SCALE))
+                    + (i32::try_from(y).unwrap() * i32::from(TETRIMINO_HEIGHT) * i32::from(SCALE));
 
-                for h in 0..TETRIMINO_HEIGHT * SCALE {
-                    for w in 0..TETRIMINO_WIDTH * SCALE {
-                        if let Some(cell) = buf.cell_mut((x as u16 + w, y as u16 + h)) {
+                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE) {
+                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE) {
+                        if let Some(cell) = buf.cell_mut((
+                            u16::try_from(x + i32::from(w)).unwrap(),
+                            u16::try_from(y + i32::from(h)).unwrap(),
+                        )) {
                             cell.set_symbol("█")
                                 .set_style(Style::default().fg(self.tetrimino.color()));
                         }
