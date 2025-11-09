@@ -24,14 +24,17 @@ pub struct Game {
 
 impl Default for Game {
     fn default() -> Self {
+        let tetrimino = Tetrimino {
+            shape: Shape::T,
+            orientation: Orientation::Up,
+        };
+
         Self {
             exit: false,
             playfield: Playfield::default(),
-            tetrimino: Tetrimino {
-                shape: Shape::T,
-                orientation: Orientation::Up,
-            },
-            x: 0,
+            tetrimino,
+            x: i32::from(BOARD_WIDTH).checked_div(2).unwrap()
+                - i32::try_from(tetrimino.cells().len().checked_div(2).unwrap()).unwrap(),
             y: 0,
             last_tick: None,
         }
@@ -251,7 +254,8 @@ impl Game {
         // Always return the tetrimino back to the upright position when switching.
         self.tetrimino.orientation = Orientation::Up;
         self.y = 0;
-        self.x = i32::from(BOARD_WIDTH).checked_div(2).unwrap();
+        self.x = i32::from(BOARD_WIDTH).checked_div(2).unwrap()
+            - i32::try_from(self.tetrimino.cells().len().checked_div(2).unwrap()).unwrap();
     }
 
     fn slam_tetrimino(&mut self) {
