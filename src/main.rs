@@ -8,12 +8,12 @@ mod tui;
 use std::io;
 use std::io::Write as _;
 
-use crate::game::Game;
+use app::App;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let mut terminal = tui::init()?;
-    let result = Game::default().run(&mut terminal);
+    let result = App::default().run(&mut terminal);
 
     if let Err(err) = tui::restore() {
         _ = writeln!(

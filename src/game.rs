@@ -1,11 +1,6 @@
-use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 
-use color_eyre::eyre::Context as _;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::prelude::*;
-use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 use crate::playfield::{Cell, Playfield, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::tetrimino::{Cells, Orientation, RotateDirection, Shape, Tetrimino};
@@ -32,7 +27,7 @@ pub enum SelectedOption {
     Exit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Game {
     pub exit: bool,
     pub state: State,
@@ -40,7 +35,7 @@ pub struct Game {
     pub active: ActiveTetrimino,
     pub next_tick: Option<Instant>,
     pub score: i32,
-    pub selected_option: SelectedOption,
+    pub selected: SelectedOption,
 }
 
 impl Default for Game {
@@ -68,63 +63,22 @@ impl Default for Game {
             },
             next_tick: None,
             score: 0,
-            selected_option: SelectedOption::Restart,
+            selected: SelectedOption::Restart,
         }
     }
-}
-
-enum Message {
-    Input(Event),
-    Tick,
 }
 
 impl Game {
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
-        let (tx, rx) = mpsc::channel();
-
-        let tx_clone = tx.clone();
-        thread::spawn(move || loop {
-            if let Ok(true) = event::poll(Duration::from_millis(50)) {
-                tx_clone
-                    .send(Message::Input(event::read().unwrap()))
-                    .expect("failed to send input event");
-            }
-        });
-
-        // Start ticker
-        let tick_interval = Duration::from_millis(100);
-        thread::spawn(move || loop {
-            let next_tick = Instant::now() + tick_interval;
-            tx.send(Message::Tick).expect("failed to send tick event");
-
-            let now = Instant::now();
-            if now < next_tick {
-                thread::sleep(next_tick - now);
-            }
-        });
-
-        while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events(&rx).wrap_err("failed to handle event")?;
+    pub fn on_key_event(&mut self, key_event: KeyEvent) {
+        if key_event.kind != KeyEventKind::Press {
+            return;
         }
-        Ok(())
+
+        self.handle_key_event(key_event);
     }
 
-    fn draw(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
-    }
-
-    fn handle_events(&mut self, rx: &mpsc::Receiver<Message>) -> color_eyre::Result<()> {
-        match rx.recv().wrap_err("failed to receive event")? {
-            Message::Input(input) => match input {
-                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key_event)
-                }
-                _ => {}
-            },
-            Message::Tick => self.handle_tick_event(),
-        };
-        Ok(())
+    pub fn on_tick(&mut self) {
+        self.handle_tick_event();
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
@@ -132,46 +86,53 @@ impl Game {
         // https://tetris.fandom.com/wiki/Tetris_Guideline
         match key_event.code {
             KeyCode::Esc => self.exit(),
-            KeyCode::Up => match self.state {
-                State::Playing => self.slam_tetrimino(),
+            // KeyCode::Char(' ') => {
+            //     if self.state == State::Playing {
+            //         self.hard_drop();
+            //     }
+            // }
+            KeyCode::Char('w') | KeyCode::Up => match self.state {
+                State::Playing => self.hard_drop(),
+                // State::Playing => self.rotate_tetrimino(RotateDirection::Clockwise),
                 State::GameOver => {
                     // In this case, there are only two options, but normally it would cycle
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
-                    self.selected_option = match self.selected_option {
+                    self.selected = match self.selected {
                         SelectedOption::Restart => SelectedOption::Exit,
                         SelectedOption::Exit => SelectedOption::Restart,
                     };
                 }
             },
-            KeyCode::Left => {
+            KeyCode::Char('a') | KeyCode::Left => {
                 if self.state == State::Playing {
                     self.move_tetrimino_left();
                 }
             }
-            KeyCode::Down => match self.state {
-                State::Playing => self.fall_faster(),
+            KeyCode::Char('s') | KeyCode::Down => match self.state {
+                State::Playing => self.soft_drop(),
+                // State::Playing => self.rotate_tetrimino(RotateDirection::Counterclockwise),
                 State::GameOver => {
                     // In this case, there are only two options, but normally it would cycle
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
-                    self.selected_option = match self.selected_option {
+                    self.selected = match self.selected {
                         SelectedOption::Restart => SelectedOption::Exit,
                         SelectedOption::Exit => SelectedOption::Restart,
                     };
                 }
             },
-            KeyCode::Right => {
+            KeyCode::Char('d') | KeyCode::Right => {
                 if self.state == State::Playing {
                     self.move_tetrimino_right();
                 }
             }
             KeyCode::Char('j') => self.rotate_tetrimino(RotateDirection::Counterclockwise),
             KeyCode::Char('k') => self.rotate_tetrimino(RotateDirection::Clockwise),
-            KeyCode::Char('q') => self.next_tetrimino(), // For testing
+            KeyCode::Char('q') => self.next_tetrimino(), // For testing (TODO: Replace with hold.)
             KeyCode::Enter => match self.state {
                 State::Playing => {}
-                State::GameOver => match self.selected_option {
+                State::GameOver => match self.selected {
                     SelectedOption::Restart => {
                         self.state = State::Playing;
                         self.playfield = Playfield::default();
@@ -380,7 +341,7 @@ impl Game {
         }
     }
 
-    fn slam_tetrimino(&mut self) {
+    fn hard_drop(&mut self) {
         loop {
             let target_y = self.active.y.saturating_add(1);
             let bottom =
@@ -401,7 +362,7 @@ impl Game {
         self.next_tick = Some(Instant::now());
     }
 
-    fn fall_faster(&mut self) {
+    fn soft_drop(&mut self) {
         let y = self.active.y.saturating_add(1);
 
         if self.tetrimino_fits(self.active.x, y, self.active.tetrimino.cells()) {

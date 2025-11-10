@@ -51,7 +51,6 @@ impl Widget for &Game {
 
 impl Game {
     fn render_game_over(&self, area: Rect, buf: &mut Buffer) {
-        // TODO: Figure out how to cleanly pad the items.
         let items = ["Restart", "Exit"];
 
         let [layout] = Layout::default()
@@ -78,7 +77,7 @@ impl Game {
             .iter()
             .enumerate()
             .map(|(i, text)| {
-                let style = if i == usize::from(self.selected_option as u8) {
+                let style = if i == usize::from(self.selected as u8) {
                     Style::default()
                         .fg(Color::LightYellow)
                         .add_modifier(Modifier::BOLD)
