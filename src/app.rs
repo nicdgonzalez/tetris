@@ -5,10 +5,15 @@ use std::time::{Duration, Instant};
 
 use color_eyre::eyre::Context as _;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::layout::Flex;
 use ratatui::prelude::*;
+use ratatui::symbols::border;
+use ratatui::widgets::{Block, Padding, Paragraph};
 use ratatui::DefaultTerminal;
 
 use crate::game::Game;
+use crate::playfield::{PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::render::{SCALE, TETRIMINO_HEIGHT, TETRIMINO_WIDTH};
 
 /// Represents an event for the program to handle.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,15 +40,6 @@ enum State {
 pub struct App {
     state: State,
     game: Game,
-}
-
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer)
-    where
-        Self: Sized,
-    {
-        self.game.render(area, buf)
-    }
 }
 
 impl App {
@@ -135,6 +131,230 @@ fn start_ticker(tx: Sender<Message>) {
 
         if now < next_tick {
             thread::sleep(next_tick - now);
+        }
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer)
+    where
+        Self: Sized,
+    {
+        let scale = u16::from(SCALE.get());
+
+        let playfield_height = PLAYFIELD_HEIGHT * TETRIMINO_HEIGHT * scale;
+        let playfield_width = PLAYFIELD_WIDTH * TETRIMINO_WIDTH * scale;
+
+        let [layout] = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(Flex::Center)
+            .constraints(vec![
+                // Ceiling and floor count towards the length.
+                Constraint::Length(playfield_height + 2),
+            ])
+            .areas(area);
+
+        let [left, playfield, right] = Layout::default()
+            .direction(Direction::Horizontal)
+            .flex(Flex::Center)
+            .constraints(vec![
+                Constraint::Fill(1),
+                // Both side walls count towards the length.
+                Constraint::Length(playfield_width + 2),
+                Constraint::Fill(1),
+            ])
+            .areas(layout);
+
+        self.render_left(left, buf);
+        self.render_playfield(playfield, buf);
+        self.render_right(right, buf);
+    }
+}
+
+impl App {
+    fn render_left(&self, area: Rect, buf: &mut Buffer) {
+        let scale = u16::from(SCALE.get());
+
+        let tetrimino_height = 4 * TETRIMINO_HEIGHT * scale;
+
+        let [layout] = Layout::default()
+            .direction(Direction::Horizontal)
+            .flex(Flex::End)
+            .constraints(vec![Constraint::Length(25)])
+            .areas(area);
+
+        let [hold, controls] = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(Flex::SpaceBetween)
+            // +2 for top/bottom border.
+            .constraints(vec![
+                Constraint::Length(tetrimino_height + 2),
+                Constraint::Length(7 + 2 + 2),
+            ])
+            .areas(layout);
+
+        self.render_left_hold(hold, buf);
+        self.render_left_controls(controls, buf);
+    }
+
+    fn render_left_hold(&self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title(Line::from(" Hold "))
+            .border_set(border::DOUBLE);
+
+        // Render held tetrimino.
+        if let Some(tetrimino) = self.game.hold {
+            let inner = block.inner(area);
+
+            let scale = i32::from(SCALE.get());
+            let w = i32::from(TETRIMINO_WIDTH);
+            let h = i32::from(TETRIMINO_HEIGHT);
+
+            let tetrimino_width = w * scale;
+            let tetrimino_height = h * scale;
+
+            let align_start = i32::from(tetrimino.hitbox().left) * tetrimino_width;
+
+            for (dy, row) in tetrimino.cells().into_iter().enumerate() {
+                for (dx, column) in row.into_iter().enumerate() {
+                    if column == 0 {
+                        continue;
+                    }
+
+                    let dx = i32::try_from(dx).unwrap();
+                    let dy = i32::try_from(dy).unwrap();
+
+                    let offset_x = dx * w * scale - align_start;
+                    let x = i32::from(inner.x) + tetrimino_width + offset_x;
+
+                    let offset_y = dy * h * scale;
+                    let y = i32::from(inner.y) + tetrimino_height + offset_y;
+
+                    self.render_tetrimino(buf, x, y, tetrimino.color());
+                }
+            }
+        }
+
+        block.render(area, buf);
+    }
+
+    fn render_left_controls(&self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title(Line::from(" Controls "))
+            .padding(Padding::symmetric(2, 1))
+            .border_set(border::DOUBLE);
+
+        let controls = Paragraph::new(vec![
+            Line::from("a,←: move left"),
+            Line::from("d,→: move left"),
+            Line::from("w,↑: hard drop"),
+            Line::from("s,↓: soft drop"),
+            Line::from("j,z: rotate left"),
+            Line::from("k,x: rotate right"),
+            Line::from("esc: quit"),
+        ])
+        .block(block);
+
+        controls.render(area, buf);
+    }
+
+    fn render_playfield(&self, area: Rect, buf: &mut Buffer) {
+        self.game.render(area, buf);
+    }
+
+    fn render_right(&self, area: Rect, buf: &mut Buffer) {
+        let scale = u16::from(SCALE.get());
+
+        let tetrimino_height = 4 * TETRIMINO_HEIGHT * scale;
+
+        let [layout] = Layout::default()
+            .direction(Direction::Horizontal)
+            .flex(Flex::Start)
+            .constraints(vec![Constraint::Length(25)])
+            .areas(area);
+
+        let [next, score] = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(Flex::SpaceBetween)
+            .constraints(vec![
+                Constraint::Length(tetrimino_height * 3 + 4),
+                Constraint::Length(2 + 2 + 2),
+            ])
+            .areas(layout);
+
+        self.render_right_next(next, buf);
+        self.render_right_score(score, buf);
+    }
+
+    fn render_right_next(&self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title(Line::from(" Hold "))
+            .border_set(border::DOUBLE);
+        let inner = block.inner(area);
+
+        for (i, tetrimino) in self.game.queue.iter().enumerate() {
+            let i = i32::try_from(i).unwrap();
+
+            let scale = i32::from(SCALE.get());
+            let w = i32::from(TETRIMINO_WIDTH);
+            let h = i32::from(TETRIMINO_HEIGHT);
+
+            let tetrimino_width = w * scale;
+            let tetrimino_height = h * scale;
+            let spacing = (tetrimino_height + 4) * i;
+
+            let align_start = i32::from(tetrimino.hitbox().left) * tetrimino_width;
+
+            for (dy, row) in tetrimino.cells().into_iter().enumerate() {
+                for (dx, column) in row.into_iter().enumerate() {
+                    if column == 0 {
+                        continue;
+                    }
+
+                    let dx = i32::try_from(dx).unwrap();
+                    let dy = i32::try_from(dy).unwrap();
+
+                    let offset_x = dx * w * scale - align_start;
+                    let x = i32::from(inner.x) + tetrimino_width + offset_x;
+
+                    let offset_y = dy * h * scale;
+                    let y = i32::from(inner.y) + tetrimino_height + offset_y + spacing;
+
+                    self.render_tetrimino(buf, x, y, tetrimino.color());
+                }
+            }
+        }
+
+        block.render(area, buf);
+    }
+
+    fn render_right_score(&self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .padding(Padding::symmetric(2, 1))
+            .border_set(border::DOUBLE);
+
+        let score = Paragraph::new(vec![
+            Line::from(format!("top: {}", 0)),
+            Line::from(format!("score: {}", self.game.score)),
+        ])
+        .block(block);
+
+        score.render(area, buf);
+    }
+
+    /// Draw a Tetrimino on the screen.
+    fn render_tetrimino(&self, buf: &mut Buffer, x: i32, y: i32, color: Color) {
+        let scale = u16::from(SCALE.get());
+
+        for h in 0..TETRIMINO_HEIGHT * scale {
+            for w in 0..TETRIMINO_WIDTH * scale {
+                let x = u16::try_from(x + i32::from(w)).unwrap();
+                let y = u16::try_from(y + i32::from(h)).unwrap();
+
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_style(Style::default().bg(color));
+                }
+            }
         }
     }
 }

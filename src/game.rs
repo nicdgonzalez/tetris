@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
@@ -14,20 +16,47 @@ pub struct ActiveTetrimino {
     pub y: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl Default for ActiveTetrimino {
+    fn default() -> Self {
+        let tetrimino = Tetrimino {
+            shape: Shape::random(),
+            orientation: Orientation::default(),
+        };
+        let playfield_center = PLAYFIELD_WIDTH / 2;
+        let tetrimino_center = u16::try_from(tetrimino.cells().len()).unwrap() / 2;
+
+        Self {
+            tetrimino,
+            x: (playfield_center - tetrimino_center).into(),
+            y: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum State {
+    #[default]
     Playing,
     GameOver,
 }
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectedOption {
+pub enum GameOverOption {
     Restart,
     Exit,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl fmt::Display for GameOverOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Restart => "Restart".fmt(f),
+            Self::Exit => "Exit".fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Game {
     pub exit: bool,
     pub state: State,
@@ -35,35 +64,30 @@ pub struct Game {
     pub active: ActiveTetrimino,
     pub next_tick: Option<Instant>,
     pub score: i32,
-    pub selected: SelectedOption,
+    pub hold: Option<Tetrimino>,
+    pub can_hold: bool,
+    pub selected: GameOverOption,
+    pub queue: VecDeque<Tetrimino>,
 }
 
 impl Default for Game {
     fn default() -> Self {
-        let tetrimino = Tetrimino {
-            shape: Shape::random(),
-            orientation: Orientation::Up,
-        };
-        let cell_width = tetrimino.cells().len();
-
         Self {
             exit: false,
             state: State::Playing,
             playfield: Playfield::default(),
-            active: ActiveTetrimino {
-                tetrimino,
-                x: i32::from(PLAYFIELD_WIDTH)
-                    // Get center of the playfield.
-                    .checked_div(2)
-                    .unwrap()
-                    // Offset to also align the tetrimino.
-                    .checked_sub(i32::try_from(cell_width.checked_div(2).unwrap()).unwrap())
-                    .unwrap(),
-                y: 0,
-            },
+            active: ActiveTetrimino::default(),
             next_tick: None,
             score: 0,
-            selected: SelectedOption::Restart,
+            selected: GameOverOption::Restart,
+            hold: None,
+            can_hold: true,
+            queue: (0..4)
+                .map(|_| Tetrimino {
+                    shape: Shape::random(),
+                    orientation: Orientation::default(),
+                })
+                .collect(),
         }
     }
 }
@@ -86,21 +110,15 @@ impl Game {
         // https://tetris.fandom.com/wiki/Tetris_Guideline
         match key_event.code {
             KeyCode::Esc => self.exit(),
-            // KeyCode::Char(' ') => {
-            //     if self.state == State::Playing {
-            //         self.hard_drop();
-            //     }
-            // }
-            KeyCode::Char('w') | KeyCode::Up => match self.state {
+            KeyCode::Char('w') | KeyCode::Up | KeyCode::Char(' ') => match self.state {
                 State::Playing => self.hard_drop(),
-                // State::Playing => self.rotate_tetrimino(RotateDirection::Clockwise),
                 State::GameOver => {
                     // In this case, there are only two options, but normally it would cycle
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
                     self.selected = match self.selected {
-                        SelectedOption::Restart => SelectedOption::Exit,
-                        SelectedOption::Exit => SelectedOption::Restart,
+                        GameOverOption::Restart => GameOverOption::Exit,
+                        GameOverOption::Exit => GameOverOption::Restart,
                     };
                 }
             },
@@ -117,8 +135,8 @@ impl Game {
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
                     self.selected = match self.selected {
-                        SelectedOption::Restart => SelectedOption::Exit,
-                        SelectedOption::Exit => SelectedOption::Restart,
+                        GameOverOption::Restart => GameOverOption::Exit,
+                        GameOverOption::Exit => GameOverOption::Restart,
                     };
                 }
             },
@@ -127,18 +145,28 @@ impl Game {
                     self.move_tetrimino_right();
                 }
             }
-            KeyCode::Char('j') => self.rotate_tetrimino(RotateDirection::Counterclockwise),
-            KeyCode::Char('k') => self.rotate_tetrimino(RotateDirection::Clockwise),
-            KeyCode::Char('q') => self.next_tetrimino(), // For testing (TODO: Replace with hold.)
+            KeyCode::Char('z') | KeyCode::Char('j') => {
+                self.rotate_tetrimino(RotateDirection::Counterclockwise)
+            }
+            KeyCode::Char('x') | KeyCode::Char('k') => {
+                self.rotate_tetrimino(RotateDirection::Clockwise)
+            }
+            KeyCode::Char('c') | KeyCode::Char('q') => self.hold_tetrimino(),
             KeyCode::Enter => match self.state {
                 State::Playing => {}
                 State::GameOver => match self.selected {
-                    SelectedOption::Restart => {
+                    GameOverOption::Restart => {
                         self.state = State::Playing;
                         self.playfield = Playfield::default();
                         self.next_tetrimino();
+                        self.queue = (0..4)
+                            .map(|_| Tetrimino {
+                                shape: Shape::random(),
+                                orientation: Orientation::default(),
+                            })
+                            .collect();
                     }
-                    SelectedOption::Exit => {
+                    GameOverOption::Exit => {
                         self.exit();
                     }
                 },
@@ -177,6 +205,7 @@ impl Game {
             self.update_board();
             self.clear_finished_lines();
             self.next_tetrimino();
+            self.can_hold = true;
         }
     }
 
@@ -278,6 +307,9 @@ impl Game {
     }
 
     fn rotate_tetrimino(&mut self, direction: RotateDirection) {
+        // TODO: I don't think I need to set and reset anymore; I can create a new
+        // `ActiveTetrimino` and discard it if it wouldn't fit.
+
         let before = self.active;
 
         self.active.tetrimino = Tetrimino {
@@ -300,6 +332,7 @@ impl Game {
             self.active.y = i32::from(PLAYFIELD_HEIGHT) - i32::from(hitbox.bottom) - 1;
         }
 
+        // TODO: I'm pretty sure this is not supposed to be handled this way.
         if !self.tetrimino_fits(self.active.x, self.active.y, self.active.tetrimino.cells())
             && self.tetrimino_fits(
                 self.active.x,
@@ -316,28 +349,48 @@ impl Game {
         }
     }
 
-    fn next_tetrimino(&mut self) {
-        let next_active = ActiveTetrimino {
-            tetrimino: Tetrimino {
-                shape: Shape::random(),
-                orientation: Orientation::Up,
-            },
-            x: i32::from(PLAYFIELD_WIDTH)
-                .checked_div(2)
-                .unwrap()
-                .checked_sub(
-                    i32::try_from(self.active.tetrimino.cells().len().checked_div(2).unwrap())
-                        .unwrap(),
-                )
-                .unwrap(),
+    fn hold_tetrimino(&mut self) {
+        if !self.can_hold {
+            return;
+        }
 
-            y: 0,
+        match self.hold {
+            Some(tetrimino) => {
+                self.hold = Some(Tetrimino {
+                    shape: self.active.tetrimino.shape,
+                    orientation: Orientation::default(),
+                });
+                self.active = ActiveTetrimino {
+                    tetrimino,
+                    ..Default::default()
+                };
+            }
+            None => {
+                self.hold = Some(Tetrimino {
+                    shape: self.active.tetrimino.shape,
+                    orientation: Orientation::default(),
+                });
+                self.next_tetrimino();
+            }
+        }
+
+        self.can_hold = false;
+    }
+
+    fn next_tetrimino(&mut self) {
+        let next = ActiveTetrimino {
+            tetrimino: self.queue.pop_front().unwrap(),
+            ..Default::default()
         };
 
-        if !self.tetrimino_fits(next_active.x, next_active.y, next_active.tetrimino.cells()) {
+        if !self.tetrimino_fits(next.x, next.y, next.tetrimino.cells()) {
             self.state = State::GameOver;
         } else {
-            self.active = next_active;
+            self.active = next;
+            self.queue.push_back(Tetrimino {
+                shape: Shape::random(),
+                orientation: Orientation::default(),
+            });
         }
     }
 

@@ -39,8 +39,9 @@ impl Shape {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Orientation {
+    #[default]
     Up,
     Right,
     Down,
@@ -129,6 +130,12 @@ impl Tetrimino {
 #[rustfmt::skip]
 const BLOCK_I: [Cells; 4] = [
     [
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ],
+    [
         [0, 0, 1, 0],
         [0, 0, 1, 0],
         [0, 0, 1, 0],
@@ -145,16 +152,16 @@ const BLOCK_I: [Cells; 4] = [
         [0, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 1, 0, 0],
-    ],
-    [
-        [0, 0, 0, 0],
-        [1, 1, 1, 1],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
     ],
 ];
 
 const HITBOX_I: [Hitbox; 4] = [
+    Hitbox {
+        top: 1,
+        left: 0,
+        bottom: 1,
+        right: 3,
+    },
     Hitbox {
         top: 0,
         left: 2,
@@ -172,12 +179,6 @@ const HITBOX_I: [Hitbox; 4] = [
         left: 1,
         bottom: 3,
         right: 1,
-    },
-    Hitbox {
-        top: 1,
-        left: 0,
-        bottom: 1,
-        right: 3,
     },
 ];
 
@@ -260,15 +261,15 @@ const BLOCK_S: [Cells; 4] = [
         [0, 0, 0, 0],
     ],
     [
-        [1, 0, 0, 0],
-        [1, 1, 0, 0],
         [0, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 1, 0],
         [0, 0, 0, 0],
     ],
     [
+        [0, 0, 0, 0],
         [0, 1, 1, 0],
         [1, 1, 0, 0],
-        [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
@@ -288,14 +289,14 @@ const HITBOX_S: [Hitbox; 4] = [
     },
     Hitbox {
         top: 0,
-        left: 0,
+        left: 1,
         bottom: 2,
-        right: 1,
+        right: 2,
     },
     Hitbox {
-        top: 0,
+        top: 1,
         left: 0,
-        bottom: 1,
+        bottom: 2,
         right: 2,
     },
     Hitbox {
@@ -315,15 +316,15 @@ const BLOCK_Z: [Cells; 4] = [
         [0, 0, 0, 0],
     ],
     [
+        [0, 0, 1, 0],
+        [0, 1, 1, 0],
         [0, 1, 0, 0],
-        [1, 1, 0, 0],
-        [1, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
+        [0, 0, 0, 0],
         [1, 1, 0, 0],
         [0, 1, 1, 0],
-        [0, 0, 0, 0],
         [0, 0, 0, 0],
     ],
     [
@@ -343,14 +344,14 @@ const HITBOX_Z: [Hitbox; 4] = [
     },
     Hitbox {
         top: 0,
-        left: 0,
+        left: 1,
         bottom: 2,
-        right: 1,
+        right: 2,
     },
     Hitbox {
-        top: 0,
+        top: 1,
         left: 0,
-        bottom: 1,
+        bottom: 2,
         right: 2,
     },
     Hitbox {
@@ -363,12 +364,6 @@ const HITBOX_Z: [Hitbox; 4] = [
 
 #[rustfmt::skip]
 const BLOCK_J: [Cells; 4] = [
-    [
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [1, 1, 0, 0],
-        [0, 0, 0, 0],
-    ],
     [
         [1, 0, 0, 0],
         [1, 1, 1, 0],
@@ -387,15 +382,15 @@ const BLOCK_J: [Cells; 4] = [
         [0, 0, 1, 0],
         [0, 0, 0, 0],
     ],
+    [
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
+        [1, 1, 0, 0],
+        [0, 0, 0, 0],
+    ],
 ];
 
 const HITBOX_J: [Hitbox; 4] = [
-    Hitbox {
-        top: 0,
-        left: 0,
-        bottom: 2,
-        right: 1,
-    },
     Hitbox {
         top: 0,
         left: 0,
@@ -414,16 +409,16 @@ const HITBOX_J: [Hitbox; 4] = [
         bottom: 2,
         right: 2,
     },
+    Hitbox {
+        top: 0,
+        left: 0,
+        bottom: 2,
+        right: 1,
+    },
 ];
 
 #[rustfmt::skip]
 const BLOCK_L: [Cells; 4] = [
-    [
-        [1, 0, 0, 0],
-        [1, 0, 0, 0],
-        [1, 1, 0, 0],
-        [0, 0, 0, 0],
-    ],
     [
         [0, 0, 1, 0],
         [1, 1, 1, 0],
@@ -431,15 +426,21 @@ const BLOCK_L: [Cells; 4] = [
         [0, 0, 0, 0],
     ],
     [
-        [1, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 1, 0, 0],
+        [0, 1, 1, 0],
         [0, 0, 0, 0],
     ],
     [
+        [0, 0, 0, 0],
         [1, 1, 1, 0],
         [1, 0, 0, 0],
         [0, 0, 0, 0],
+    ],
+    [
+        [1, 1, 0, 0],
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
         [0, 0, 0, 0],
     ],
 ];
@@ -448,13 +449,19 @@ const HITBOX_L: [Hitbox; 4] = [
     Hitbox {
         top: 0,
         left: 0,
-        bottom: 2,
-        right: 1,
+        bottom: 1,
+        right: 2,
     },
     Hitbox {
-        top: 0,
+        top: 1,
         left: 0,
-        bottom: 1,
+        bottom: 2,
+        right: 2,
+    },
+    Hitbox {
+        top: 1,
+        left: 0,
+        bottom: 2,
         right: 2,
     },
     Hitbox {
@@ -462,11 +469,5 @@ const HITBOX_L: [Hitbox; 4] = [
         left: 0,
         bottom: 2,
         right: 1,
-    },
-    Hitbox {
-        top: 0,
-        left: 0,
-        bottom: 1,
-        right: 2,
     },
 ];

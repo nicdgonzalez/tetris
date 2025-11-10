@@ -8,7 +8,7 @@ use ratatui::symbols::border;
 use ratatui::widgets::{Block, List, ListItem};
 
 use crate::game::{Game, State};
-use crate::playfield::{Cell, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::playfield::{Cell, PLAYFIELD_HEIGHT};
 
 pub const SCALE: NonZeroU8 = NonZeroU8::new(2).unwrap();
 
@@ -27,18 +27,7 @@ impl Widget for &Game {
     where
         Self: Sized,
     {
-        let [_hold, game, _next] = Layout::default()
-            .direction(Direction::Horizontal)
-            .flex(Flex::Center)
-            .constraints(vec![
-                Constraint::Length(20),
-                // +2 because the walls count as part of the length.
-                Constraint::Length(PLAYFIELD_WIDTH * TETRIMINO_WIDTH * u16::from(SCALE.get()) + 2),
-                Constraint::Length(20),
-            ])
-            .areas(area);
-
-        self.render_game(game, buf);
+        self.render_game(area, buf);
         // Render hold
         // Render next
         // Render score
@@ -97,24 +86,15 @@ impl Game {
     }
 
     fn render_game(&self, area: Rect, buf: &mut Buffer) {
-        let [game] = Layout::default()
-            .direction(Direction::Vertical)
-            .flex(Flex::Center)
-            .constraints(vec![Constraint::Length(
-                // +2 because the ceiling and floor count as part of the length.
-                PLAYFIELD_HEIGHT * TETRIMINO_HEIGHT * u16::from(SCALE.get()) + 2,
-            )])
-            .areas(area);
-
         let title = Line::from(" Tetris ".bold());
 
         let game_block = Block::bordered()
             .title(title.centered())
             .border_set(border::DOUBLE);
 
-        (&game_block).render(game, buf);
+        (&game_block).render(area, buf);
 
-        let inner = game_block.inner(game);
+        let inner = game_block.inner(area);
 
         self.render_board(&inner, buf);
         self.render_active_tetrimino(&inner, buf);
@@ -135,16 +115,7 @@ impl Game {
                 let y: i32 = i32::from(area.y)
                     + (i32::try_from(dy).unwrap() * i32::from(TETRIMINO_HEIGHT) * scale);
 
-                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE.get()) {
-                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE.get()) {
-                        let x = u16::try_from(x + i32::from(w)).unwrap();
-                        let y = u16::try_from(y + i32::from(h)).unwrap();
-
-                        if let Some(cell) = buf.cell_mut((x, y)) {
-                            cell.set_style(Style::default().bg(color));
-                        }
-                    }
-                }
+                self.render_tetrimino(buf, x, y, color);
             }
         }
     }
@@ -156,44 +127,38 @@ impl Game {
                     continue;
                 }
 
-                // Board literal:
-                //
-                // 0 1 0
-                // 1 1 1
-                //
-                // Board render (without scaling): [w=2, h=1]
-                //
-                // 0 0 1 1 0 0
-                // 1 1 1 1 1 1
-                //
-                // Board render (with scaling): [w=2, h=1]
-                //
-                // 0 0 0 0 1 1 1 1 0 0 0 0
-                // 0 0 0 0 1 1 1 1 0 0 0 0
-                // 1 1 1 1 1 1 1 1 1 1 1 1
-                // 1 1 1 1 1 1 1 1 1 1 1 1
-
                 let scale = i32::from(SCALE.get());
 
-                // Calculate our enlarged X to match the proper tetrimino width and scale.
+                // X/Y offsets will never be greater than the length/height of a tetrimino.
+                assert_eq!(self.active.tetrimino.cells().len(), 4);
+                let dx = i32::try_from(dx).unwrap();
+                assert_eq!(row.len(), 4);
+                let dy = i32::try_from(dy).unwrap();
+
+                let offset_x = dx * i32::from(TETRIMINO_WIDTH) * scale;
                 let width = self.active.x * i32::from(TETRIMINO_WIDTH) * scale;
-                let offset_x = i32::try_from(dx).unwrap() * i32::from(TETRIMINO_WIDTH) * scale;
-                let x = i32::from(area.x) + width + offset_x;
+                let x = i32::from(area.x) + offset_x + width;
 
-                // Calculate our enlarged Y to match the proper tetrimino height and scale.
+                let offset_y = dy * i32::from(TETRIMINO_HEIGHT) * scale;
                 let height = self.active.y * i32::from(TETRIMINO_HEIGHT) * scale;
-                let offset_y = i32::try_from(dy).unwrap() * i32::from(TETRIMINO_HEIGHT) * scale;
-                let y = i32::from(area.y) + height + offset_y;
+                let y = i32::from(area.y) + offset_y + height;
 
-                for h in 0..TETRIMINO_HEIGHT * u16::from(SCALE.get()) {
-                    for w in 0..TETRIMINO_WIDTH * u16::from(SCALE.get()) {
-                        let x = u16::try_from(x + i32::from(w)).unwrap();
-                        let y = u16::try_from(y + i32::from(h)).unwrap();
+                self.render_tetrimino(buf, x, y, self.active.tetrimino.color());
+            }
+        }
+    }
 
-                        if let Some(cell) = buf.cell_mut((x, y)) {
-                            cell.set_style(Style::default().bg(self.active.tetrimino.color()));
-                        }
-                    }
+    /// Draw a Tetrimino on the screen.
+    fn render_tetrimino(&self, buf: &mut Buffer, x: i32, y: i32, color: Color) {
+        let scale = u16::from(SCALE.get());
+
+        for h in 0..TETRIMINO_HEIGHT * scale {
+            for w in 0..TETRIMINO_WIDTH * scale {
+                let x = u16::try_from(x + i32::from(w)).unwrap();
+                let y = u16::try_from(y + i32::from(h)).unwrap();
+
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_style(Style::default().bg(color));
                 }
             }
         }
