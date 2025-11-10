@@ -8,7 +8,7 @@ use ratatui::symbols::border;
 use ratatui::widgets::{Block, List, ListItem};
 
 use crate::game::{Game, State};
-use crate::playfield::{Cell, PLAYFIELD_HEIGHT};
+use crate::playfield::Cell;
 
 pub const SCALE: NonZeroU8 = NonZeroU8::new(2).unwrap();
 
