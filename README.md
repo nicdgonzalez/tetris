@@ -6,11 +6,14 @@ Play Tetris in the terminal.
 
 ## Installation
 
-> [!NOTE]\
-> Currently under development!
-
 Install from Git using cargo:
 
 ```bash
 cargo install --git https://github.com/nicdgonzalez/tetris.git
+```
+
+## Usage
+
+```bash
+tetris
 ```
