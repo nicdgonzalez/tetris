@@ -1,5 +1,6 @@
-mod board;
+mod app;
 mod game;
+mod playfield;
 mod render;
 mod tetrimino;
 mod tui;

@@ -1,3 +1,4 @@
+use rand::seq::IndexedRandom as _;
 use ratatui::style::Color;
 
 pub type Cells = [[u16; 4]; 4];
@@ -20,6 +21,21 @@ pub enum Shape {
     Z,
     J,
     L,
+}
+
+impl Shape {
+    pub fn random() -> Self {
+        let variants = [
+            Self::I,
+            Self::O,
+            Self::T,
+            Self::S,
+            Self::Z,
+            Self::J,
+            Self::L,
+        ];
+        *variants.choose(&mut rand::rng()).unwrap()
+    }
 }
 
 #[repr(u8)]
