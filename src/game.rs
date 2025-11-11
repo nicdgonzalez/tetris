@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
-use std::fmt;
+use std::io::ErrorKind;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use std::{fmt, fs};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
@@ -68,10 +70,32 @@ pub struct Game {
     pub can_hold: bool,
     pub selected: GameOverOption,
     pub queue: VecDeque<Tetrimino>,
+    // TODO: Move to `App` after `Game` refactor.
+    pub previous_scores: Vec<i32>,
+    pub scores_txt: PathBuf,
+    pub top_score: i32,
 }
 
 impl Default for Game {
     fn default() -> Self {
+        // TODO: Move to `App` after `Game` refactor. These should not panic.
+        let mut scores_txt = dirs::data_local_dir().expect("failed to get user's data directory");
+        scores_txt.extend(["tetris", "scores.txt"]);
+        let scores_txt = scores_txt;
+        fs::create_dir_all(scores_txt.parent().unwrap())
+            .expect("failed to create tetris data directory");
+
+        let previous_scores = match fs::read_to_string(&scores_txt) {
+            Ok(text) => text
+                .lines()
+                .filter_map(|line| line.parse::<i32>().ok())
+                .collect(),
+            Err(err) if err.kind() == ErrorKind::NotFound => Vec::new(),
+            Err(err) => panic!("failed to get previous scores: {err}"),
+        };
+
+        let top_score = previous_scores.iter().cloned().max().unwrap_or_default();
+
         Self {
             exit: false,
             state: State::Playing,
@@ -88,6 +112,9 @@ impl Default for Game {
                     orientation: Orientation::default(),
                 })
                 .collect(),
+            previous_scores,
+            scores_txt,
+            top_score,
         }
     }
 }
@@ -421,5 +448,29 @@ impl Game {
         if self.tetrimino_fits(self.active.x, y, self.active.tetrimino.cells()) {
             self.active.y = y;
         }
+    }
+
+    pub fn save_score(&self) -> color_eyre::Result<()> {
+        if self.score < 1 {
+            // TODO: Since score is an i32, if you manage to overflow the score, your score will
+            // not be saved. :-)
+            //
+            // This will probably be fixed in the refactor, though I can't imagine anyone playing
+            // long enough for this to ever happen.
+            return Ok(());
+        };
+
+        assert!(self.scores_txt.parent().is_some_and(|dir| dir.exists()));
+        let mut scores = self.previous_scores.clone();
+        scores.push(self.score);
+        fs::write(
+            &self.scores_txt,
+            scores
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )?;
+        Ok(())
     }
 }

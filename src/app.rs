@@ -63,6 +63,10 @@ impl App {
             self.handle_events(&rx).wrap_err("failed to handle event")?;
         }
 
+        self.game
+            .save_score()
+            .wrap_err("failed to save user's score")?;
+
         Ok(())
     }
 
@@ -288,7 +292,7 @@ impl App {
 
     fn render_right_next(&self, area: Rect, buf: &mut Buffer) {
         let block = Block::bordered()
-            .title(Line::from(" Hold "))
+            .title(Line::from(" Next "))
             .border_set(border::DOUBLE);
         let inner = block.inner(area);
 
@@ -334,7 +338,7 @@ impl App {
             .border_set(border::DOUBLE);
 
         let score = Paragraph::new(vec![
-            Line::from(format!("top: {}", 0)),
+            Line::from(format!("top: {}", self.game.top_score)),
             Line::from(format!("score: {}", self.game.score)),
         ])
         .block(block);
