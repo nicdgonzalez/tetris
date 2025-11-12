@@ -431,7 +431,10 @@ impl Game {
 
             match self.next_bag.pop_front() {
                 Some(tetrimino) => self.bag.push_back(tetrimino),
-                None => self.next_bag = create_bag(),
+                None => {
+                    self.next_bag = create_bag();
+                    self.bag.push_back(self.next_bag.pop_front().unwrap());
+                }
             }
         }
     }
