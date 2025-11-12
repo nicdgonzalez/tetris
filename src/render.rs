@@ -315,7 +315,7 @@ impl App {
             .flex(Flex::SpaceBetween)
             .constraints(vec![
                 Constraint::Length(tetrimino_height * 3 + 4),
-                Constraint::Length(2 + 2 + 2),
+                Constraint::Length(3 + 2 + 2),
             ])
             .areas(layout);
 
@@ -374,6 +374,11 @@ impl App {
         let score = Paragraph::new(vec![
             Line::from(format!("top: {}", self.game.top_score)),
             Line::from(format!("score: {}", self.game.score)),
+            Line::from(if self.game.combo > 0 {
+                format!("x{} combo", self.game.combo)
+            } else {
+                "".to_owned()
+            }),
         ])
         .block(block);
 
