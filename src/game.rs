@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -12,8 +12,8 @@ use crate::tetrimino::{Cells, Orientation, RotateDirection, Shape, Tetrimino};
 #[derive(Debug, Clone, Copy)]
 pub struct ActiveTetrimino {
     pub tetrimino: Tetrimino,
-    // Must be able to hold negative indices because some tetriminoes (e.g., `I` and `O`)
-    // are offset from the edge of the grid.
+    // Must be able to hold negative indices because some tetriminoes are offset from
+    // the edge of their grids.
     pub x: i32,
     pub y: i32,
 }
@@ -36,8 +36,9 @@ impl Default for ActiveTetrimino {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum State {
+pub enum GameState {
     #[default]
+    Waiting,
     Playing,
     GameOver,
 }
@@ -61,19 +62,21 @@ impl fmt::Display for GameOverOption {
 #[derive(Debug, Clone)]
 pub struct Game {
     pub exit: bool,
-    pub state: State,
+    pub state: GameState,
     pub playfield: Playfield,
     pub active: ActiveTetrimino,
     pub next_tick: Option<Instant>,
-    pub score: i32,
+    pub score: u32,
     pub hold: Option<Tetrimino>,
     pub can_hold: bool,
     pub selected: GameOverOption,
-    pub queue: VecDeque<Tetrimino>,
+    pub bag: VecDeque<Tetrimino>,
+    pub next_bag: VecDeque<Tetrimino>,
+    pub combo: u8,
     // TODO: Move to `App` after `Game` refactor.
-    pub previous_scores: Vec<i32>,
+    pub previous_scores: Vec<u32>,
     pub scores_txt: PathBuf,
-    pub top_score: i32,
+    pub top_score: u32,
 }
 
 impl Default for Game {
@@ -88,7 +91,7 @@ impl Default for Game {
         let previous_scores = match fs::read_to_string(&scores_txt) {
             Ok(text) => text
                 .lines()
-                .filter_map(|line| line.parse::<i32>().ok())
+                .filter_map(|line| line.parse::<u32>().ok())
                 .collect(),
             Err(err) if err.kind() == ErrorKind::NotFound => Vec::new(),
             Err(err) => panic!("failed to get previous scores: {err}"),
@@ -98,7 +101,7 @@ impl Default for Game {
 
         Self {
             exit: false,
-            state: State::Playing,
+            state: GameState::default(),
             playfield: Playfield::default(),
             active: ActiveTetrimino::default(),
             next_tick: None,
@@ -106,12 +109,14 @@ impl Default for Game {
             selected: GameOverOption::Restart,
             hold: None,
             can_hold: true,
-            queue: (0..4)
-                .map(|_| Tetrimino {
-                    shape: Shape::random(),
-                    orientation: Orientation::default(),
-                })
-                .collect(),
+            // Tetris has an algorithm for properly generating tetriminoes:
+            // https://tetris.fandom.com/wiki/Random_Generator
+            //
+            // Since I haven't implemented that algorithm yet, we just make sure that you don't get
+            // the same shape back to back.
+            bag: create_bag(),
+            next_bag: create_bag(),
+            combo: 0,
             previous_scores,
             scores_txt,
             top_score,
@@ -138,8 +143,9 @@ impl Game {
         match key_event.code {
             KeyCode::Esc => self.exit(),
             KeyCode::Char('w') | KeyCode::Up | KeyCode::Char(' ') => match self.state {
-                State::Playing => self.hard_drop(),
-                State::GameOver => {
+                GameState::Waiting => {}
+                GameState::Playing => self.hard_drop(),
+                GameState::GameOver => {
                     // In this case, there are only two options, but normally it would cycle
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
@@ -150,14 +156,15 @@ impl Game {
                 }
             },
             KeyCode::Char('a') | KeyCode::Left => {
-                if self.state == State::Playing {
+                if self.state == GameState::Playing {
                     self.move_tetrimino_left();
                 }
             }
             KeyCode::Char('s') | KeyCode::Down => match self.state {
-                State::Playing => self.soft_drop(),
+                GameState::Waiting => {}
+                GameState::Playing => self.soft_drop(),
                 // State::Playing => self.rotate_tetrimino(RotateDirection::Counterclockwise),
-                State::GameOver => {
+                GameState::GameOver => {
                     // In this case, there are only two options, but normally it would cycle
                     // through all of them. I don't think this is the best way to handle this,
                     // but... oh well.
@@ -168,7 +175,7 @@ impl Game {
                 }
             },
             KeyCode::Char('d') | KeyCode::Right => {
-                if self.state == State::Playing {
+                if self.state == GameState::Playing {
                     self.move_tetrimino_right();
                 }
             }
@@ -180,17 +187,22 @@ impl Game {
             }
             KeyCode::Char('c') | KeyCode::Char('q') => self.hold_tetrimino(),
             KeyCode::Enter => match self.state {
-                State::Playing => {}
-                State::GameOver => match self.selected {
+                GameState::Waiting => {}
+                GameState::Playing => {}
+                GameState::GameOver => match self.selected {
                     GameOverOption::Restart => {
-                        self.state = State::Playing;
+                        self.state = GameState::Playing;
                         self.playfield = Playfield::default();
                         self.next_tetrimino();
-                        self.queue = (0..4)
+                        self.bag = (0..20)
                             .map(|_| Tetrimino {
                                 shape: Shape::random(),
                                 orientation: Orientation::default(),
                             })
+                            .collect::<HashSet<_>>()
+                            .into_iter()
+                            // Hopefully there is 8 unique tetriminos in the bag now...
+                            .take(8)
                             .collect();
                     }
                     GameOverOption::Exit => {
@@ -203,7 +215,7 @@ impl Game {
     }
 
     fn handle_tick_event(&mut self) {
-        if self.state != State::Playing {
+        if self.state != GameState::Playing {
             return;
         }
 
@@ -239,13 +251,14 @@ impl Game {
     fn clear_finished_lines(&mut self) {
         let first_line = self.active.y + i32::from(self.active.tetrimino.hitbox().top);
         let last_line = self.active.y + i32::from(self.active.tetrimino.hitbox().bottom);
+        let mut lines_cleared: u8 = 0;
 
         for i in first_line..=last_line {
             // Scan the changed lines to see if any are now complete.
             let line = self.playfield.cells[usize::try_from(i).unwrap()];
 
             if line.iter().all(|c| !c.is_empty()) {
-                self.score = self.score.saturating_add(10);
+                lines_cleared = lines_cleared.saturating_add(1);
                 let cells = self.playfield.cells;
 
                 // Shift everything down by one line.
@@ -263,6 +276,21 @@ impl Game {
                 }
             }
         }
+
+        if lines_cleared > 0 {
+            self.combo += 1;
+            self.score += 50;
+        } else {
+            self.combo = 0;
+        }
+
+        self.score = self.score.saturating_add(match lines_cleared {
+            1 => 100,
+            2 => 300,
+            3 => 500,
+            4 => 800,
+            _ => 0,
+        });
     }
 
     fn update_board(&mut self) {
@@ -334,45 +362,31 @@ impl Game {
     }
 
     fn rotate_tetrimino(&mut self, direction: RotateDirection) {
-        // TODO: I don't think I need to set and reset anymore; I can create a new
-        // `ActiveTetrimino` and discard it if it wouldn't fit.
-
-        let before = self.active;
-
-        self.active.tetrimino = Tetrimino {
-            shape: self.active.tetrimino.shape,
-            orientation: self.active.tetrimino.orientation.rotate(direction),
+        let mut next = ActiveTetrimino {
+            tetrimino: Tetrimino {
+                shape: self.active.tetrimino.shape,
+                orientation: self.active.tetrimino.orientation.rotate(direction),
+            },
+            x: self.active.x,
+            y: self.active.y,
         };
 
-        let hitbox = self.active.tetrimino.hitbox();
+        let hitbox = next.tetrimino.hitbox();
 
-        // Check if the rotated piece is in-bounds.
-        if self.active.x - i32::from(hitbox.left) < 0 {
-            self.active.x = 0 - i32::from(hitbox.left) + 1;
+        if next.x - i32::from(hitbox.left) < 0 {
+            next.x = 0 - i32::from(hitbox.left);
         }
 
-        if self.active.x + i32::from(hitbox.right) >= PLAYFIELD_WIDTH.into() {
-            self.active.x = i32::from(PLAYFIELD_WIDTH) - i32::from(hitbox.right) - 1;
+        if next.x + i32::from(hitbox.right) >= PLAYFIELD_WIDTH.into() {
+            next.x = i32::from(PLAYFIELD_WIDTH) - i32::from(hitbox.right) - 1;
         }
 
-        if self.active.y + i32::from(hitbox.bottom) > PLAYFIELD_HEIGHT.into() {
-            self.active.y = i32::from(PLAYFIELD_HEIGHT) - i32::from(hitbox.bottom) - 1;
+        if next.y + i32::from(hitbox.bottom) >= PLAYFIELD_HEIGHT.into() {
+            next.y = i32::from(PLAYFIELD_HEIGHT) - i32::from(hitbox.bottom) - 1;
         }
 
-        // TODO: I'm pretty sure this is not supposed to be handled this way.
-        if !self.tetrimino_fits(self.active.x, self.active.y, self.active.tetrimino.cells())
-            && self.tetrimino_fits(
-                self.active.x,
-                self.active.y.saturating_sub(1),
-                self.active.tetrimino.cells(),
-            )
-        {
-            // Go up one if the block conflicts with another block.
-            self.active.y = self.active.y.saturating_sub(1);
-        }
-
-        if !self.tetrimino_fits(self.active.x, self.active.y, self.active.tetrimino.cells()) {
-            self.active = before;
+        if self.tetrimino_fits(next.x, next.y, next.tetrimino.cells()) {
+            self.active = next;
         }
     }
 
@@ -406,22 +420,25 @@ impl Game {
 
     fn next_tetrimino(&mut self) {
         let next = ActiveTetrimino {
-            tetrimino: self.queue.pop_front().unwrap(),
+            tetrimino: self.bag.pop_front().unwrap(),
             ..Default::default()
         };
 
         if !self.tetrimino_fits(next.x, next.y, next.tetrimino.cells()) {
-            self.state = State::GameOver;
+            self.state = GameState::GameOver;
         } else {
             self.active = next;
-            self.queue.push_back(Tetrimino {
-                shape: Shape::random(),
-                orientation: Orientation::default(),
-            });
+
+            match self.next_bag.pop_front() {
+                Some(tetrimino) => self.bag.push_back(tetrimino),
+                None => self.next_bag = create_bag(),
+            }
         }
     }
 
     fn hard_drop(&mut self) {
+        let before_y = self.active.y;
+
         loop {
             let target_y = self.active.y.saturating_add(1);
             let bottom =
@@ -439,6 +456,8 @@ impl Game {
             break;
         }
 
+        let cells = u32::from(PLAYFIELD_HEIGHT) - u32::try_from(before_y).unwrap() + 1;
+        self.score = self.score.saturating_add(2 * cells);
         self.next_tick = Some(Instant::now());
     }
 
@@ -448,15 +467,18 @@ impl Game {
         if self.tetrimino_fits(self.active.x, y, self.active.tetrimino.cells()) {
             self.active.y = y;
         }
+
+        self.score = self.score.saturating_add(1); // Add 1 point per cell.
+
+        if self.active.y
+            >= i32::from(PLAYFIELD_HEIGHT) - i32::from(self.active.tetrimino.hitbox().bottom) - 1
+        {
+            self.next_tick = Some(Instant::now());
+        }
     }
 
     pub fn save_score(&self) -> color_eyre::Result<()> {
         if self.score < 1 {
-            // TODO: Since score is an i32, if you manage to overflow the score, your score will
-            // not be saved. :-)
-            //
-            // This will probably be fixed in the refactor, though I can't imagine anyone playing
-            // long enough for this to ever happen.
             return Ok(());
         };
 
@@ -473,4 +495,17 @@ impl Game {
         )?;
         Ok(())
     }
+}
+
+fn create_bag() -> VecDeque<Tetrimino> {
+    (0..50)
+        .map(|_| Tetrimino {
+            shape: Shape::random(),
+            orientation: Orientation::default(),
+        })
+        .collect::<HashSet<_>>()
+        .into_iter()
+        // Hopefully there is 8 unique tetriminos in the bag now...
+        .take(7)
+        .collect()
 }

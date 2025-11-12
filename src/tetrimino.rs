@@ -12,7 +12,7 @@ pub struct Hitbox {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Shape {
     I,
     O,
@@ -34,12 +34,16 @@ impl Shape {
             Self::J,
             Self::L,
         ];
+        // Tetris has an algorithm for properly generating tetriminoes:
+        // https://tetris.fandom.com/wiki/Random_Generator
+        //
+        // (This is not that algorithm, and it ocassionally shows.)
         *variants.choose(&mut rand::rng()).unwrap()
     }
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Orientation {
     #[default]
     Up,
@@ -69,7 +73,7 @@ impl Orientation {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Tetrimino {
     pub shape: Shape,
     pub orientation: Orientation,
@@ -89,8 +93,7 @@ impl Tetrimino {
     }
 
     pub fn cells(self) -> Cells {
-        // Rust requires `usize` to occupy be at least 16 bits.
-        //
+        // Rust requires `usize` to occupy be at least 16 bits, so casting from 8 bits is OK.
         // Related: https://github.com/rust-lang/rust/issues/48593
         let idx = usize::from(self.orientation as u8);
 
@@ -106,8 +109,7 @@ impl Tetrimino {
     }
 
     pub fn hitbox(self) -> Hitbox {
-        // Rust requires `usize` to occupy be at least 16 bits.
-        //
+        // Rust requires `usize` to occupy be at least 16 bits, so casting from 8 bits is OK.
         // Related: https://github.com/rust-lang/rust/issues/48593
         let idx = usize::from(self.orientation as u8);
 
